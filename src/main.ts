@@ -1,5 +1,5 @@
-import {Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, WebdavSyncSettings} from "./settings";
+import { Plugin } from "obsidian";
+import { DEFAULT_SETTINGS, type WebdavSyncSettings } from "./settings";
 
 export default class WebdavSync extends Plugin {
 	settings!: WebdavSyncSettings;
@@ -8,11 +8,14 @@ export default class WebdavSync extends Plugin {
 		await this.loadSettings();
 	}
 
-	onunload() {
-	}
+	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<WebdavSyncSettings>);
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			(await this.loadData()) as Partial<WebdavSyncSettings>,
+		);
 	}
 
 	async saveSettings() {

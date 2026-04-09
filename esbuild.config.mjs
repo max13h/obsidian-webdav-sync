@@ -1,9 +1,9 @@
+import { copyFileSync, mkdirSync } from "node:fs";
+import { builtinModules } from "node:module";
+import process from "node:process";
 import esbuild from "esbuild";
-import process from "process";
-import { builtinModules } from 'node:module';
-import { copyFileSync, mkdirSync } from 'node:fs';
 
-const prod = (process.argv[2] === "production");
+const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
 	entryPoints: [
@@ -25,7 +25,8 @@ const context = await esbuild.context({
 		"@lezer/common",
 		"@lezer/highlight",
 		"@lezer/lr",
-		...builtinModules],
+		...builtinModules,
+	],
 	format: "cjs",
 	target: "es2018",
 	logLevel: "info",
