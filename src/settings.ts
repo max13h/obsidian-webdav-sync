@@ -1,18 +1,18 @@
 import {App, PluginSettingTab, Setting} from "obsidian";
-import MyPlugin from "./main";
+import WebdavSync from "./main";
 
-export interface MyPluginSettings {
+export interface WebdavSyncSettings {
 	mySetting: string;
 }
 
-export const DEFAULT_SETTINGS: MyPluginSettings = {
+export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	mySetting: 'default'
 }
 
 export class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	plugin: WebdavSync;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: WebdavSync) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
