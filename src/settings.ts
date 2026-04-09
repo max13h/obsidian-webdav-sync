@@ -1,16 +1,16 @@
-import { type App, PluginSettingTab, Setting } from "obsidian";
+import { type App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type WebdavSync from "./main";
 
 export interface WebdavSyncSettings {
 	serverUrl: string;
 	username: string;
-	password: string;
+	passwordSecret: string;
 }
 
 export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	serverUrl: "",
 	username: "",
-	password: "",
+	passwordSecret: "",
 };
 
 export class WebdavSyncSettingTab extends PluginSettingTab {
@@ -55,12 +55,11 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Password")
 			.setDesc("WebDAV password")
-			.addText((text) =>
-				text
-					.setPlaceholder("password")
-					.setValue(this.plugin.settings.password)
+			.addComponent((el) =>
+				new SecretComponent(this.app, el)
+					.setValue(this.plugin.settings.passwordSecret)
 					.onChange(async (value) => {
-						this.plugin.settings.password = value;
+						this.plugin.settings.passwordSecret = value;
 						await this.plugin.saveSettings();
 					}),
 			);

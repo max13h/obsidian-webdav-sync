@@ -1,12 +1,14 @@
 import { Plugin } from "obsidian";
 import { DEFAULT_SETTINGS, type WebdavSyncSettings, WebdavSyncSettingTab } from "./settings";
 import { Client } from "./webdav/client";
+import { patchWebdavFetch } from "./webdav/patcher";
 
 export default class WebdavSync extends Plugin {
 	settings!: WebdavSyncSettings;
 
 	async onload() {
 		await this.loadSettings();
+		patchWebdavFetch();
 
 		this.addSettingTab(new WebdavSyncSettingTab(this.app, this));
 
@@ -14,7 +16,7 @@ export default class WebdavSync extends Plugin {
 			id: "test-webdav-connection",
 			name: "Test WebDAV Connection",
 			callback: async () => {
-				const client = new Client(this.settings);
+				const client = new Client(this.app, this.settings);
 				const success = await client.testConnection();
 				console.log(success ? "WebDAV Connection Successful!" : "WebDAV Connection Failed.");
 			},
@@ -24,7 +26,7 @@ export default class WebdavSync extends Plugin {
 			id: "list-webdav-files",
 			name: "List WebDAV Files",
 			callback: async () => {
-				const client = new Client(this.settings);
+				const client = new Client(this.app, this.settings);
 				try {
 					const files = await client.listFiles();
 					console.log("Files on server:", files);
