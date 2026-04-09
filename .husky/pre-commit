@@ -1,0 +1,7 @@
+(pnpm run lint && pnpm run format) || {
+  echo "===== Linting or Formatting issues found. Running fixes... ====="
+  pnpm run lint:fix
+  pnpm run format:write
+  echo "===== Fixes applied. Please stage the changes and commit again. ====="
+  exit 1
+}
