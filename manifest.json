@@ -1,0 +1,10 @@
+{
+	"id": "obsidian-webdav-sync",
+	"name": "Webdav Sync",
+	"minAppVersion": "0.15.0",
+	"description": "Straight to the point plugin to sync your vault with a WebDAV server.",
+	"author": "max13h",
+	"authorUrl": "https://hmae.fr",
+	"fundingUrl": "",
+	"isDesktopOnly": false
+}
