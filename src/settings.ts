@@ -9,7 +9,7 @@ export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	mySetting: 'default'
 }
 
-export class SampleSettingTab extends PluginSettingTab {
+export class WebdavSyncSettingTab extends PluginSettingTab {
 	plugin: WebdavSync;
 
 	constructor(app: App, plugin: WebdavSync) {
