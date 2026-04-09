@@ -25,6 +25,7 @@
 		"typescript": "^6.0.2"
 	},
 	"dependencies": {
-		"obsidian": "latest"
+		"obsidian": "latest",
+		"webdav": "^5.9.0"
 	}
 }
