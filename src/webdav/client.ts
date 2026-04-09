@@ -1,4 +1,5 @@
 import type { App } from "obsidian";
+import type { FileStat } from "webdav";
 import { createClient } from "webdav";
 import type { WebdavSyncSettings } from "../settings";
 
@@ -9,6 +10,12 @@ export class Client {
 		private app: App,
 		private settings: WebdavSyncSettings,
 	) {}
+
+	private resolvePath(remotePath: string): string {
+		const base = this.settings.remoteBasePath.replace(/\/$/, "");
+		const path = remotePath.startsWith("/") ? remotePath : `/${remotePath}`;
+		return base ? `${base}${path}` : path;
+	}
 
 	private async getClient(force: boolean = false) {
 		if (!this.client || force) {
@@ -24,7 +31,8 @@ export class Client {
 	async testConnection(): Promise<boolean> {
 		try {
 			const client = await this.getClient(true);
-			await client.getDirectoryContents("/");
+			const basePath = this.settings.remoteBasePath || "/";
+			await client.getDirectoryContents(basePath);
 			return true;
 		} catch (error) {
 			console.error("WebDAV Connection Error:", error);
@@ -33,8 +41,42 @@ export class Client {
 		}
 	}
 
-	async listFiles(path = "/"): Promise<string[]> {
-		const contents = await (await this.getClient()).getDirectoryContents(path);
-		return (contents as Array<{ filename: string }>).map((item) => item.filename);
+	async uploadFile(remotePath: string, content: ArrayBuffer): Promise<void> {
+		const client = await this.getClient();
+		await client.putFileContents(this.resolvePath(remotePath), content, { overwrite: true });
+	}
+
+	async downloadFile(remotePath: string): Promise<ArrayBuffer> {
+		const client = await this.getClient();
+		const data = await client.getFileContents(this.resolvePath(remotePath));
+		return data as ArrayBuffer;
+	}
+
+	async deleteFile(remotePath: string): Promise<void> {
+		const client = await this.getClient();
+		await client.deleteFile(this.resolvePath(remotePath));
+	}
+
+	async ensureDirectory(remotePath: string): Promise<void> {
+		const client = await this.getClient();
+		const resolved = this.resolvePath(remotePath);
+		const parts = resolved.replace(/^\//, "").split("/");
+		let current = "";
+		for (const part of parts) {
+			current += `/${part}`;
+			try {
+				await client.createDirectory(current);
+			} catch {
+				// Directory likely already exists
+			}
+		}
+	}
+
+	async listAllFiles(remotePath: string): Promise<FileStat[]> {
+		const client = await this.getClient();
+		const contents = await client.getDirectoryContents(this.resolvePath(remotePath), {
+			deep: true,
+		});
+		return (contents as FileStat[]).filter((item) => item.type === "file");
 	}
 }
