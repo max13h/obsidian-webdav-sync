@@ -1,16 +1,22 @@
 import { Plugin } from "obsidian";
 import { DEFAULT_SETTINGS, type WebdavSyncSettings, WebdavSyncSettingTab } from "./settings";
+import { StatusBar } from "./ui/statusBar";
 import { Client } from "./webdav/client";
 import { patchWebdavFetch } from "./webdav/patcher";
 
 export default class WebdavSync extends Plugin {
 	settings!: WebdavSyncSettings;
 	client!: Client;
+	statusBar: StatusBar | null = null;
 
 	async onload() {
 		await this.loadSettings();
 		patchWebdavFetch();
 		this.client = new Client(this.app, this.settings);
+
+		if (this.settings.statusBarEnabled) {
+			this.statusBar = new StatusBar(this);
+		}
 
 		this.addSettingTab(new WebdavSyncSettingTab(this.app, this));
 
