@@ -1,4 +1,5 @@
 import { Notice, Plugin } from "obsidian";
+import { assertDefined } from "./errors";
 import { DEFAULT_SETTINGS, type WebdavSyncSettings, WebdavSyncSettingTab } from "./settings";
 import { SyncEngine } from "./sync/engine";
 import { Scheduler } from "./sync/scheduler";
@@ -7,15 +8,17 @@ import { Client } from "./webdav/client";
 import { patchWebdavFetch } from "./webdav/patcher";
 
 export default class WebdavSync extends Plugin {
-	settings!: WebdavSyncSettings;
-	client!: Client;
-	engine!: SyncEngine;
-	scheduler!: Scheduler;
+	settings: WebdavSyncSettings | undefined;
+	client: Client | undefined;
+	engine: SyncEngine | undefined;
+	scheduler: Scheduler | undefined;
 	statusBar: StatusBar | null = null;
 
 	async onload() {
 		patchWebdavFetch();
 		await this.loadSettings();
+
+		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
 
 		this.client = new Client(this.app, this.settings);
 		this.engine = new SyncEngine(this.app, this.client, this.settings);
@@ -37,6 +40,7 @@ export default class WebdavSync extends Plugin {
 			id: "test-webdav-connection",
 			name: "Test WebDAV connection",
 			callback: async () => {
+				assertDefined(this.client, "Failed to load WebDAV connection.");
 				const success = await this.client.testConnection();
 				new Notice(
 					success
@@ -54,10 +58,13 @@ export default class WebdavSync extends Plugin {
 	}
 
 	onunload() {
+		assertDefined(this.scheduler, "Scheduler not initialized.");
 		this.scheduler.stop();
 	}
 
 	async runSync(): Promise<void> {
+		assertDefined(this.engine, "Sync engine not initialized.");
+		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
 		this.statusBar?.setSyncing();
 		try {
 			await this.engine.sync();

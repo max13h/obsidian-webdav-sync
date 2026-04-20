@@ -1,0 +1,8 @@
+import { Notice } from "obsidian";
+
+export function assertDefined<T>(value: T | null | undefined, message: string): asserts value is T {
+	if (value == null) {
+		new Notice(message);
+		throw new Error(message);
+	}
+}

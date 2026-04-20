@@ -1,4 +1,5 @@
 import { type App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { assertDefined } from "./errors";
 import type WebdavSync from "./main";
 
 export type SyncDirection = "two-way" | "local-to-remote" | "remote-to-local";
@@ -55,6 +56,8 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		assertDefined(this.plugin.settings, "Settings not initialized.");
+		const settings = this.plugin.settings;
 		const { containerEl } = this;
 		containerEl.empty();
 
@@ -67,9 +70,9 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder("https://example.com/dav")
-					.setValue(this.plugin.settings.serverUrl)
+					.setValue(settings.serverUrl)
 					.onChange(async (value) => {
-						this.plugin.settings.serverUrl = value;
+						settings.serverUrl = value;
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -80,9 +83,9 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.addText((text) =>
 				text
 					.setPlaceholder("/MyVault")
-					.setValue(this.plugin.settings.remoteBasePath)
+					.setValue(settings.remoteBasePath)
 					.onChange(async (value) => {
-						this.plugin.settings.remoteBasePath = value;
+						settings.remoteBasePath = value;
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -90,18 +93,18 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Username").addText((text) =>
 			text
 				.setPlaceholder("username")
-				.setValue(this.plugin.settings.username)
+				.setValue(settings.username)
 				.onChange(async (value) => {
-					this.plugin.settings.username = value;
+					settings.username = value;
 					await this.plugin.saveSettings();
 				}),
 		);
 
 		new Setting(containerEl).setName("Password").addComponent((el) =>
 			new SecretComponent(this.app, el)
-				.setValue(this.plugin.settings.passwordSecret)
+				.setValue(settings.passwordSecret)
 				.onChange(async (value) => {
-					this.plugin.settings.passwordSecret = value;
+					settings.passwordSecret = value;
 					await this.plugin.saveSettings();
 				}),
 		);
@@ -114,6 +117,7 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 					.setButtonText("Test")
 					.setCta()
 					.onClick(async () => {
+						assertDefined(this.plugin.client, "WebDAV client not initialized.");
 						btn.setButtonText("Testing…").setDisabled(true);
 						const success = await this.plugin.client.testConnection();
 						btn.setDisabled(false);
@@ -135,9 +139,9 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 				.addOption("two-way", "Two-way")
 				.addOption("local-to-remote", "Local → Remote (push)")
 				.addOption("remote-to-local", "Remote → Local (pull)")
-				.setValue(this.plugin.settings.syncDirection)
+				.setValue(settings.syncDirection)
 				.onChange(async (value) => {
-					this.plugin.settings.syncDirection = value as SyncDirection;
+					settings.syncDirection = value as SyncDirection;
 					await this.plugin.saveSettings();
 				}),
 		);
@@ -151,9 +155,9 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 					.addOption("local-wins", "Local always wins")
 					.addOption("remote-wins", "Remote always wins")
 					.addOption("ask", "Ask me each time")
-					.setValue(this.plugin.settings.conflictResolution)
+					.setValue(settings.conflictResolution)
 					.onChange(async (value) => {
-						this.plugin.settings.conflictResolution = value as ConflictResolution;
+						settings.conflictResolution = value as ConflictResolution;
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -166,9 +170,9 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 					.addOption("never-delete-remote", "Never delete on remote")
 					.addOption("never-delete-local", "Never delete locally")
 					.addOption("mirror", "Mirror deletions on both sides")
-					.setValue(this.plugin.settings.deletionHandling)
+					.setValue(settings.deletionHandling)
 					.onChange(async (value) => {
-						this.plugin.settings.deletionHandling = value as DeletionHandling;
+						settings.deletionHandling = value as DeletionHandling;
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -179,24 +183,24 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 				.addOption("full-vault", "Entire vault (include .obsidian/)")
 				.addOption("markdown-only", "Markdown files only")
 				.addOption("custom-folder", "Custom folder")
-				.setValue(this.plugin.settings.syncScope)
+				.setValue(settings.syncScope)
 				.onChange(async (value) => {
-					this.plugin.settings.syncScope = value as SyncScope;
+					settings.syncScope = value as SyncScope;
 					await this.plugin.saveSettings();
 					this.display();
 				}),
 		);
 
-		if (this.plugin.settings.syncScope === "custom-folder") {
+		if (settings.syncScope === "custom-folder") {
 			new Setting(containerEl)
 				.setName("Folder to sync")
 				.setDesc("Path relative to the vault root (e.g. Notes/Work)")
 				.addText((text) =>
 					text
 						.setPlaceholder("Notes/Work")
-						.setValue(this.plugin.settings.customSyncFolder)
+						.setValue(settings.customSyncFolder)
 						.onChange(async (value) => {
-							this.plugin.settings.customSyncFolder = value;
+							settings.customSyncFolder = value;
 							await this.plugin.saveSettings();
 						}),
 				);
@@ -209,8 +213,8 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.setName("Sync on startup")
 			.setDesc("Automatically sync when Obsidian starts.")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.syncOnStartup).onChange(async (value) => {
-					this.plugin.settings.syncOnStartup = value;
+				toggle.setValue(settings.syncOnStartup).onChange(async (value) => {
+					settings.syncOnStartup = value;
 					await this.plugin.saveSettings();
 				}),
 			);
@@ -219,8 +223,8 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.setName("Sync on file save")
 			.setDesc("Trigger a sync a few seconds after a file is modified.")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.syncOnSave).onChange(async (value) => {
-					this.plugin.settings.syncOnSave = value;
+				toggle.setValue(settings.syncOnSave).onChange(async (value) => {
+					settings.syncOnSave = value;
 					await this.plugin.saveSettings();
 				}),
 			);
@@ -229,21 +233,21 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.setName("Periodic sync")
 			.setDesc("Automatically sync on a fixed interval.")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.periodicSync).onChange(async (value) => {
-					this.plugin.settings.periodicSync = value;
+				toggle.setValue(settings.periodicSync).onChange(async (value) => {
+					settings.periodicSync = value;
 					await this.plugin.saveSettings();
 					this.display();
 				}),
 			);
 
-		if (this.plugin.settings.periodicSync) {
+		if (settings.periodicSync) {
 			new Setting(containerEl).setName("Sync interval (minutes)").addSlider((slider) =>
 				slider
 					.setLimits(1, 60, 1)
-					.setValue(this.plugin.settings.periodicSyncInterval)
+					.setValue(settings.periodicSyncInterval)
 					.setDynamicTooltip()
 					.onChange(async (value) => {
-						this.plugin.settings.periodicSyncInterval = value;
+						settings.periodicSyncInterval = value;
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -256,8 +260,8 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.setName("Status bar")
 			.setDesc("Show sync state in the status bar.")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.statusBarEnabled).onChange(async (value) => {
-					this.plugin.settings.statusBarEnabled = value;
+				toggle.setValue(settings.statusBarEnabled).onChange(async (value) => {
+					settings.statusBarEnabled = value;
 					await this.plugin.saveSettings();
 				}),
 			);
@@ -266,8 +270,8 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.setName("Notifications")
 			.setDesc("Show a notice when sync completes or fails.")
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.notificationsEnabled).onChange(async (value) => {
-					this.plugin.settings.notificationsEnabled = value;
+				toggle.setValue(settings.notificationsEnabled).onChange(async (value) => {
+					settings.notificationsEnabled = value;
 					await this.plugin.saveSettings();
 				}),
 			);
