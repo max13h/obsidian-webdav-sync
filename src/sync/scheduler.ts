@@ -1,6 +1,5 @@
 import type { App, EventRef } from "obsidian";
 import type { WebdavSyncSettings } from "../settings";
-import type { SyncEngine } from "./engine";
 
 export class Scheduler {
 	private intervalId: number | null = null;
@@ -9,20 +8,20 @@ export class Scheduler {
 
 	constructor(
 		private app: App,
-		private engine: SyncEngine,
+		private syncFn: () => Promise<void>,
 		private settings: WebdavSyncSettings,
 	) {}
 
 	start(): void {
 		if (this.settings.periodicSync) {
 			const ms = this.settings.periodicSyncInterval * 60 * 1_000;
-			this.intervalId = window.setInterval(() => void this.engine.sync(), ms);
+			this.intervalId = window.setInterval(() => void this.syncFn(), ms);
 		}
 
 		if (this.settings.syncOnSave) {
 			this.modifyRef = this.app.vault.on("modify", () => {
 				if (this.debounceTimer !== null) clearTimeout(this.debounceTimer);
-				this.debounceTimer = setTimeout(() => void this.engine.sync(), 5_000);
+				this.debounceTimer = setTimeout(() => void this.syncFn(), 5_000);
 			});
 		}
 	}
