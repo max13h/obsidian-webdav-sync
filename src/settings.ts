@@ -1,6 +1,7 @@
 import { type App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import { assertDefined } from "./errors";
 import type WebdavSync from "./main";
+import { StatusBar } from "./ui/statusBar";
 
 export type SyncDirection = "two-way" | "local-to-remote" | "remote-to-local";
 export type ConflictResolution = "remote-wins" | "local-wins" | "newest-wins" | "ask";
@@ -263,6 +264,12 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 				toggle.setValue(settings.statusBarEnabled).onChange(async (value) => {
 					settings.statusBarEnabled = value;
 					await this.plugin.saveSettings();
+					if (value) {
+						this.plugin.statusBar = new StatusBar(this.plugin);
+					} else {
+						this.plugin.statusBar?.destroy();
+						this.plugin.statusBar = null;
+					}
 				}),
 			);
 

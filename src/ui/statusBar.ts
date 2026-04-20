@@ -32,6 +32,10 @@ export class StatusBar {
 		this.el.createSpan({ text: ` ${message}` });
 	}
 
+	destroy(): void {
+		this.el.remove();
+	}
+
 	private formatTime(ms: number): string {
 		return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 	}
