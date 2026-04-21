@@ -19,7 +19,7 @@ export class Client {
 
 	private async getClient(force: boolean = false) {
 		if (!this.client || force) {
-			const password = this.app.secretStorage.getSecret(this.settings.passwordSecret) ?? "";
+			const password = (await this.app.secretStorage.getSecret(this.settings.passwordSecret)) ?? "";
 			this.client = createClient(this.settings.serverUrl, {
 				username: this.settings.username,
 				password,
