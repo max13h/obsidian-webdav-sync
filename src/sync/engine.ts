@@ -64,7 +64,7 @@ export class SyncEngine {
 			const local = localByPath.get(path);
 			const remote = remoteByPath.get(path);
 			const tracked = state.files[path];
-			actions.push(this.classify(path, local, remote, tracked));
+			actions.push(this.classify(local, remote, tracked));
 		}
 
 		await this.execute(actions, state);
@@ -78,53 +78,41 @@ export class SyncEngine {
 	 * |   no    |   no  |  yes   | download (new remote file)                |
 	 * |   no    |  yes  |  yes   | conflict (both sides created same path)   |
 	 * |  yes    |  yes  |  yes   | depends on mtime comparison (see below)   |
-	 * |  yes    |  yes  |   no   | delete-remote (local deleted it remotely) |
-	 * |  yes    |   no  |  yes   | delete-local  (remote deleted it locally) |
-	 *
-	 * For the tracked + both-exist case:
-	 *   localChanged  = local.stat.mtime  > tracked.localMtime
-	 *   remoteChanged = remoteMtime       > tracked.remoteMtime
-	 *
-	 *   localChanged && !remoteChanged  → upload
-	 *   !localChanged && remoteChanged  → download
-	 *   localChanged && remoteChanged   → conflict
-	 *   !localChanged && !remoteChanged → skip
+	 * |  yes    |  yes  |   no   | delete-local  (remote deleted it)         |
+	 * |  yes    |   no  |  yes   | delete-remote (local deleted it)          |
 	 */
 	private classify(
-		_path: string,
 		local: TFile | undefined,
 		remote: FileStat | undefined,
 		tracked: SyncState["files"][string] | undefined,
 	): Action {
 		const remoteMtime = remote ? new Date(remote.lastmod).getTime() : 0;
 
-		if (!local && !remote) return { type: "skip" };
-
-		if (local && remote) {
-			if (!tracked) {
-				// Both sides have the file, but we've never tracked it — treat as conflict
+		if (!tracked) {
+			if (local && !remote) return { type: "upload", local };
+			if (!local && remote) return { type: "download", remotePath: remote.filename, remoteMtime };
+			if (local && remote) {
 				return { type: "conflict", local, remotePath: remote.filename, remoteMtime };
 			}
+			return { type: "skip" };
+		}
+
+		if (local && remote) {
 			const localChanged = local.stat.mtime > tracked.localMtime;
 			const remoteChanged = remoteMtime > tracked.remoteMtime;
+
 			if (!localChanged && !remoteChanged) return { type: "skip" };
 			if (localChanged && !remoteChanged) return { type: "upload", local };
-			if (!localChanged && remoteChanged)
+			if (!localChanged && remoteChanged) {
 				return { type: "download", remotePath: remote.filename, remoteMtime };
-			// Both changed
+			}
 			return { type: "conflict", local, remotePath: remote.filename, remoteMtime };
 		}
 
-		if (local && !remote) {
-			if (!tracked) return { type: "upload", local };
-			// File was tracked but is now gone remotely → remote deleted it
-			return { type: "delete-local", local };
-		}
+		if (local && !remote) return { type: "delete-local", local };
+		if (!local && remote) return { type: "delete-remote", remotePath: remote.filename };
 
-		// !local && remote — remote is guaranteed non-undefined here (all other branches exhausted)
-		if (!tracked) return { type: "download", remotePath: remote!.filename, remoteMtime };
-		// File was tracked but is now gone locally → local deleted it
-		return { type: "delete-remote", remotePath: remote!.filename };
+		return { type: "skip" };
 	}
 
 	/**
