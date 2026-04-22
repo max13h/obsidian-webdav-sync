@@ -1,9 +1,9 @@
 import type { App, TFile } from "obsidian";
+import { Notice } from "obsidian";
 import type { FileStat } from "webdav";
 import type { WebdavSyncSettings } from "../settings";
 import type { Client } from "../webdav/client";
-import type { SyncState } from "./state";
-import { loadState, saveState } from "./state";
+import { loadState, type SyncState, saveState } from "./state";
 
 type UploadAction = { type: "upload"; local: TFile };
 type DownloadAction = { type: "download"; remotePath: string; remoteMtime: number };
@@ -28,9 +28,9 @@ export class SyncEngine {
 	) {}
 
 	async sync(): Promise<void> {
-		const state = await loadState(this.app);
-		const { localByPath, remoteByPath, setOfAllPaths } = await this._retrievePaths();
+		const state: SyncState = await loadState(this.app);
 
+		const { localByPath, remoteByPath, setOfAllPaths } = await this.retrievePaths();
 		const actions: Action[] = [];
 
 		for (const path of setOfAllPaths) {
@@ -109,25 +109,31 @@ export class SyncEngine {
 		for (const action of actions) {
 			if (action.type === "skip") continue;
 
-			if (action.type === "upload") {
-				if (syncDirection === "remote-to-local") continue;
-				await this.upload(action.local, state);
-			} else if (action.type === "download") {
-				if (syncDirection === "local-to-remote") continue;
-				await this.download(action.remotePath, action.remoteMtime, state);
-			} else if (action.type === "conflict") {
-				await this.resolveConflict(action, conflictResolution, syncDirection, state);
-			} else if (action.type === "delete-remote") {
-				if (syncDirection === "remote-to-local") continue;
-				if (deletionHandling === "never-delete-remote") continue;
-				const localPath = this.stripBasePath(action.remotePath);
-				await this.client.deleteFile(localPath);
-				delete state.files[localPath];
-			} else if (action.type === "delete-local") {
-				if (syncDirection === "local-to-remote") continue;
-				if (deletionHandling === "never-delete-local") continue;
-				await this.app.vault.delete(action.local);
-				delete state.files[action.local.path];
+			try {
+				if (action.type === "upload") {
+					if (syncDirection === "remote-to-local") continue;
+					await this.upload(action.local, state);
+				} else if (action.type === "download") {
+					if (syncDirection === "local-to-remote") continue;
+					await this.download(action.remotePath, action.remoteMtime, state);
+				} else if (action.type === "conflict") {
+					await this.resolveConflict(action, conflictResolution, syncDirection, state);
+				} else if (action.type === "delete-remote") {
+					if (syncDirection === "remote-to-local") continue;
+					if (deletionHandling === "never-delete-remote") continue;
+					const localPath = this.stripBasePath(action.remotePath);
+					await this.client.deleteFile(localPath);
+					delete state.files[localPath];
+				} else if (action.type === "delete-local") {
+					if (syncDirection === "local-to-remote") continue;
+					if (deletionHandling === "never-delete-local") continue;
+					await this.app.vault.delete(action.local);
+					delete state.files[action.local.path];
+				}
+			} catch (err) {
+				const path = "local" in action ? action.local.path : action.remotePath;
+				console.error(`[webdav-sync] Action "${action.type}" failed for "${path}"`, err);
+				new Notice(`WebDAV sync: ${action.type} failed for "${path}"`);
 			}
 		}
 	}
@@ -186,13 +192,6 @@ export class SyncEngine {
 		}
 	}
 
-	/**
-	 * Reads the local file binary, ensures the remote parent directory exists,
-	 * uploads the content, and updates state.files[path] with the new mtimes.
-	 *
-	 * After upload, both localMtime and remoteMtime in state are set to
-	 * local.stat.mtime so the next classify() sees no delta on either side.
-	 */
 	private async upload(file: TFile, state: SyncState): Promise<void> {
 		const dir = file.parent?.path;
 		if (dir) await this.client.ensureDirectory(dir);
@@ -206,17 +205,6 @@ export class SyncEngine {
 		};
 	}
 
-	/**
-	 * Downloads the remote file binary, writes it to the local vault (creating
-	 * intermediate folders if needed), and updates state.files[path].
-	 *
-	 * After download, both localMtime and remoteMtime in state are set to
-	 * remoteMtime so the next classify() sees no delta on either side.
-	 *
-	 * @param remotePath Absolute path as returned by the WebDAV server.
-	 * @param remoteMtime Remote last-modified time in Unix ms.
-	 * @param state
-	 */
 	private async download(remotePath: string, remoteMtime: number, state: SyncState): Promise<void> {
 		const localPath = this.stripBasePath(remotePath);
 		const content = await this.client.downloadFile(localPath);
@@ -232,13 +220,32 @@ export class SyncEngine {
 		state.files[localPath] = { ...entry, localMtime: remoteMtime, remoteMtime };
 	}
 
-	/**
-	 * Returns the subset of vault files that fall within the configured syncScope:
-	 *   "full-vault"       → all files
-	 *   "exclude-obsidian" → all files except those under .obsidian/
-	 *   "markdown-only"    → only .md files
-	 *   "custom-folder"    → only files whose path starts with customSyncFolder/
-	 */
+	private async retrievePaths(): Promise<{
+		localByPath: Map<string, TFile>;
+		remoteByPath: Map<string, FileStat>;
+		setOfAllPaths: Set<string>;
+	}> {
+		const localFiles = this.getLocalFiles();
+		const remoteFiles = await this.client.listAllFiles("/");
+
+		const localByPath = new Map(localFiles.map((f) => [f.path, f]));
+		const remoteByPath = new Map(
+			remoteFiles.map((f) => {
+				const path = this.stripBasePath(f.filename);
+				return [path, f];
+			}),
+		);
+
+		const setOfAllPaths = new Set([...localByPath.keys(), ...remoteByPath.keys()]);
+
+		return {
+			localByPath,
+			remoteByPath,
+			setOfAllPaths,
+		};
+	}
+
+	// Returns the subset of vault files that fall within the configured syncScope
 	private getLocalFiles(): TFile[] {
 		const { syncScope, customSyncFolder } = this.settings;
 		return this.app.vault.getFiles().filter((file) => {
@@ -266,32 +273,5 @@ export class SyncEngine {
 			return remotePath.slice(base.length).replace(/^\//, "");
 		}
 		return remotePath.replace(/^\//, "");
-	}
-
-	// Utilities functions
-
-	private async _retrievePaths(): Promise<{
-		localByPath: Map<string, TFile>;
-		remoteByPath: Map<string, FileStat>;
-		setOfAllPaths: Set<string>;
-	}> {
-		const localFiles = this.getLocalFiles();
-		const remoteFiles = await this.client.listAllFiles("/");
-
-		const localByPath = new Map(localFiles.map((f) => [f.path, f]));
-		const remoteByPath = new Map(
-			remoteFiles.map((f) => {
-				const path = this.stripBasePath(f.filename);
-				return [path, f];
-			}),
-		);
-
-		const setOfAllPaths = new Set([...localByPath.keys(), ...remoteByPath.keys()]);
-
-		return {
-			localByPath,
-			remoteByPath,
-			setOfAllPaths,
-		};
 	}
 }
