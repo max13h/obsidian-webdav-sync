@@ -20,28 +20,31 @@ export default class WebdavSync extends Plugin {
 
 		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
 
-		this.initializeComponents(this.settings);
-		this.registerCommands();
-		this.addSettingTab(new WebdavSyncSettingTab(this.app, this));
-
-		if (this.settings.syncOnStartup) {
-			void this.runSync();
-		}
-	}
-
-	private initializeComponents(settings: WebdavSyncSettings) {
-		this.client = new Client(this.app, settings);
-		this.engine = new SyncEngine(this.app, this.client, settings);
-
-		if (settings.statusBarEnabled) {
-			this.statusBar = new StatusBar(this);
-		}
-
-		this.scheduler = new Scheduler(this.app, () => this.runSync(), settings);
+		this.client = new Client(this.app, this.settings);
+		this.engine = new SyncEngine(
+			this.app,
+			this.client,
+			this.settings,
+			this.manifest.dir ?? ".obsidian/webdav-sync/",
+		);
+		this.scheduler = new Scheduler(this.app, () => this.runSync(), this.settings);
 		this.scheduler.start();
+
+		this.registerCommandsAndSettings();
+
+		if (this.settings.syncOnStartup) void this.runSync();
 	}
 
-	private registerCommands() {
+	onunload() {
+		assertDefined(this.scheduler, "Scheduler not initialized.");
+		this.scheduler.stop();
+	}
+
+	public async saveSettings() {
+		await this.saveData(this.settings);
+	}
+
+	private registerCommandsAndSettings() {
 		this.addCommand({
 			id: "webdav-sync",
 			name: "Sync now",
@@ -61,14 +64,15 @@ export default class WebdavSync extends Plugin {
 				);
 			},
 		});
+
+		this.addSettingTab(new WebdavSyncSettingTab(this.app, this));
+
+		if (this.settings?.statusBarEnabled) {
+			this.statusBar = new StatusBar(this);
+		}
 	}
 
-	onunload() {
-		assertDefined(this.scheduler, "Scheduler not initialized.");
-		this.scheduler.stop();
-	}
-
-	async runSync(): Promise<void> {
+	private async runSync(): Promise<void> {
 		assertDefined(this.engine, "Sync engine not initialized.");
 		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
 		this.statusBar?.setSyncing();
@@ -89,15 +93,11 @@ export default class WebdavSync extends Plugin {
 		}
 	}
 
-	async loadSettings() {
+	private async loadSettings() {
 		this.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
 			(await this.loadData()) as Partial<WebdavSyncSettings>,
 		);
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
 	}
 }
