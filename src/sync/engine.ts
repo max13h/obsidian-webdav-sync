@@ -20,22 +20,6 @@ type Action =
 	| DeleteLocalAction
 	| SkipAction;
 
-/**
- * Orchestrates a full sync run between the local Obsidian vault and the
- * WebDAV remote.
- *
- * Lifecycle of a single sync() call
- * ──────────────────────────────────
- *  1. loadState()        — read the last-known mtimes from .webdav-sync-state.json
- *  2. getLocalFiles()    — list vault files, filtered by syncScope setting
- *  3. listAllFiles("/")  — recursive WebDAV listing under remoteBasePath
- *  4. classify()         — for every path in the union of (local ∪ remote), produce exactly one Action
- *  5. execute()          — run each Action, mutating `state` in-place as it goes
- *  6. saveState()        — persist the updated state back to disk
- *
- * State is only saved if execute() completes without throwing, so a mid-sync
- * crash leaves the previous state intact (safe to retry).
- */
 export class SyncEngine {
 	constructor(
 		private app: App,
@@ -45,22 +29,11 @@ export class SyncEngine {
 
 	async sync(): Promise<void> {
 		const state = await loadState(this.app);
+		const { localByPath, remoteByPath, setOfAllPaths } = await this._retrievePaths();
 
-		const localFiles = this.getLocalFiles();
-		const remoteFiles = await this.client.listAllFiles("/");
-
-		const localByPath = new Map(localFiles.map((f) => [f.path, f]));
-		const remoteByPath = new Map(
-			remoteFiles.map((f) => {
-				const path = this.stripBasePath(f.filename);
-				return [path, f];
-			}),
-		);
-
-		const allPaths = new Set([...localByPath.keys(), ...remoteByPath.keys()]);
 		const actions: Action[] = [];
 
-		for (const path of allPaths) {
+		for (const path of setOfAllPaths) {
 			const local = localByPath.get(path);
 			const remote = remoteByPath.get(path);
 			const tracked = state.files[path];
@@ -293,5 +266,32 @@ export class SyncEngine {
 			return remotePath.slice(base.length).replace(/^\//, "");
 		}
 		return remotePath.replace(/^\//, "");
+	}
+
+	// Utilities functions
+
+	private async _retrievePaths(): Promise<{
+		localByPath: Map<string, TFile>;
+		remoteByPath: Map<string, FileStat>;
+		setOfAllPaths: Set<string>;
+	}> {
+		const localFiles = this.getLocalFiles();
+		const remoteFiles = await this.client.listAllFiles("/");
+
+		const localByPath = new Map(localFiles.map((f) => [f.path, f]));
+		const remoteByPath = new Map(
+			remoteFiles.map((f) => {
+				const path = this.stripBasePath(f.filename);
+				return [path, f];
+			}),
+		);
+
+		const setOfAllPaths = new Set([...localByPath.keys(), ...remoteByPath.keys()]);
+
+		return {
+			localByPath,
+			remoteByPath,
+			setOfAllPaths,
+		};
 	}
 }
