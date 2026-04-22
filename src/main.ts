@@ -3,6 +3,7 @@ import { assertDefined } from "./errors";
 import { DEFAULT_SETTINGS, type WebdavSyncSettings, WebdavSyncSettingTab } from "./settings";
 import { SyncEngine } from "./sync/engine";
 import { Scheduler } from "./sync/scheduler";
+import { StateStore } from "./sync/state";
 import { StatusBar } from "./ui/statusBar";
 import { SyncIndicator } from "./ui/syncIndicator";
 import { Client } from "./webdav/client";
@@ -10,6 +11,7 @@ import { patchWebdavFetch } from "./webdav/patcher";
 
 export default class WebdavSync extends Plugin {
 	settings: WebdavSyncSettings | undefined;
+	store: StateStore | undefined;
 	client: Client | undefined;
 	engine: SyncEngine | undefined;
 	scheduler: Scheduler | undefined;
@@ -22,13 +24,11 @@ export default class WebdavSync extends Plugin {
 
 		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
 
+		this.store = new StateStore(this.app, this.manifest.dir ?? ".obsidian/webdav-sync/");
+		await this.store.load();
+
 		this.client = new Client(this.app, this.settings);
-		this.engine = new SyncEngine(
-			this.app,
-			this.client,
-			this.settings,
-			this.manifest.dir ?? ".obsidian/webdav-sync/",
-		);
+		this.engine = new SyncEngine(this.app, this.client, this.settings, this.store);
 		this.scheduler = new Scheduler(this.app, () => this.runSync(), this.settings);
 		this.scheduler.start();
 
@@ -70,7 +70,8 @@ export default class WebdavSync extends Plugin {
 		this.addSettingTab(new WebdavSyncSettingTab(this.app, this));
 
 		if (this.settings?.statusBarEnabled) {
-			this.statusBar = new StatusBar(this);
+			assertDefined(this.store, "StateStore not initialized.");
+			this.statusBar = new StatusBar(this, this.store);
 		}
 		if (this.settings?.syncIndicatorEnabled) {
 			this.syncIndicator = new SyncIndicator();

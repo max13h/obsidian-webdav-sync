@@ -3,7 +3,7 @@ import { Notice } from "obsidian";
 import type { FileStat } from "webdav";
 import type { WebdavSyncSettings } from "../settings";
 import type { Client } from "../webdav/client";
-import { loadState, type SyncState, saveState } from "./state";
+import type { StateStore, SyncFileEntry } from "./state";
 
 type UploadAction = { type: "upload"; local: TFile };
 type DownloadAction = { type: "download"; remotePath: string; remoteMtime: number };
@@ -25,24 +25,22 @@ export class SyncEngine {
 		private app: App,
 		private client: Client,
 		private settings: WebdavSyncSettings,
-		private pluginDir: string,
+		private store: StateStore,
 	) {}
 
 	async sync(): Promise<void> {
-		const state: SyncState = await loadState(this.app, this.pluginDir);
-
 		const { localByPath, remoteByPath, setOfAllPaths } = await this.retrievePaths();
 		const actions: Action[] = [];
 
 		for (const path of setOfAllPaths) {
 			const local = localByPath.get(path);
 			const remote = remoteByPath.get(path);
-			const tracked = state.files[path];
-			actions.push(this.classify(local, remote, tracked));
+			actions.push(this.classify(local, remote, this.store.files[path]));
 		}
 
-		await this.execute(actions, state);
-		await saveState(this.app, this.pluginDir, state);
+		await this.execute(actions);
+		this.store.lastSync = Date.now();
+		await this.store.save();
 	}
 
 	/**
@@ -58,7 +56,7 @@ export class SyncEngine {
 	private classify(
 		local: TFile | undefined,
 		remote: FileStat | undefined,
-		tracked: SyncState["files"][string] | undefined,
+		tracked: SyncFileEntry | undefined,
 	): Action {
 		const remoteMtime = remote ? new Date(remote.lastmod).getTime() : 0;
 
@@ -104,7 +102,7 @@ export class SyncEngine {
 	 * State entries are updated immediately after each successful action so
 	 * that a partial run leaves state consistent with what was actually done.
 	 */
-	private async execute(actions: Action[], state: SyncState): Promise<void> {
+	private async execute(actions: Action[]): Promise<void> {
 		const { syncDirection, conflictResolution, deletionHandling } = this.settings;
 
 		for (const action of actions) {
@@ -113,23 +111,25 @@ export class SyncEngine {
 			try {
 				if (action.type === "upload") {
 					if (syncDirection === "remote-to-local") continue;
-					await this.upload(action.local, state);
+					await this.upload(action.local);
 				} else if (action.type === "download") {
 					if (syncDirection === "local-to-remote") continue;
-					await this.download(action.remotePath, action.remoteMtime, state);
+					await this.download(action.remotePath, action.remoteMtime);
 				} else if (action.type === "conflict") {
-					await this.resolveConflict(action, conflictResolution, syncDirection, state);
+					await this.resolveConflict(action, conflictResolution, syncDirection);
 				} else if (action.type === "delete-remote") {
 					if (syncDirection === "remote-to-local") continue;
 					if (deletionHandling === "never-delete-remote") continue;
 					const localPath = this.stripBasePath(action.remotePath);
 					await this.client.deleteFile(localPath);
-					delete state.files[localPath];
+					delete this.store.files[localPath];
+					await this.store.save();
 				} else if (action.type === "delete-local") {
 					if (syncDirection === "local-to-remote") continue;
 					if (deletionHandling === "never-delete-local") continue;
 					await this.app.vault.delete(action.local);
-					delete state.files[action.local.path];
+					delete this.store.files[action.local.path];
+					await this.store.save();
 				}
 			} catch (err) {
 				const path = "local" in action ? action.local.path : action.remotePath;
@@ -157,27 +157,26 @@ export class SyncEngine {
 		action: ConflictAction,
 		resolution: WebdavSyncSettings["conflictResolution"],
 		direction: WebdavSyncSettings["syncDirection"],
-		state: SyncState,
 	): Promise<void> {
 		if (direction === "local-to-remote") {
-			await this.upload(action.local, state);
+			await this.upload(action.local);
 			return;
 		}
 		if (direction === "remote-to-local") {
-			await this.download(action.remotePath, action.remoteMtime, state);
+			await this.download(action.remotePath, action.remoteMtime);
 			return;
 		}
 
 		// two-way: apply conflict resolution strategy
 		if (resolution === "local-wins") {
-			await this.upload(action.local, state);
+			await this.upload(action.local);
 		} else if (resolution === "remote-wins") {
-			await this.download(action.remotePath, action.remoteMtime, state);
+			await this.download(action.remotePath, action.remoteMtime);
 		} else if (resolution === "newest-wins") {
 			if (action.local.stat.mtime >= action.remoteMtime) {
-				await this.upload(action.local, state);
+				await this.upload(action.local);
 			} else {
-				await this.download(action.remotePath, action.remoteMtime, state);
+				await this.download(action.remotePath, action.remoteMtime);
 			}
 		} else {
 			// "ask" — not yet implemented, fall back to newest-wins
@@ -186,27 +185,28 @@ export class SyncEngine {
 				`[webdav-sync] Conflict on ${action.local.path} — ask mode not yet implemented, using newest-wins`,
 			);
 			if (action.local.stat.mtime >= action.remoteMtime) {
-				await this.upload(action.local, state);
+				await this.upload(action.local);
 			} else {
-				await this.download(action.remotePath, action.remoteMtime, state);
+				await this.download(action.remotePath, action.remoteMtime);
 			}
 		}
 	}
 
-	private async upload(file: TFile, state: SyncState): Promise<void> {
+	private async upload(file: TFile): Promise<void> {
 		const dir = file.parent?.path;
 		if (dir) await this.client.ensureDirectory(dir);
 		const content = await this.app.vault.readBinary(file);
 		await this.client.uploadFile(file.path, content);
-		const entry = state.files[file.path] ?? { localMtime: 0, remoteMtime: 0 };
-		state.files[file.path] = {
+		const entry = this.store.files[file.path] ?? { localMtime: 0, remoteMtime: 0 };
+		this.store.files[file.path] = {
 			...entry,
 			localMtime: file.stat.mtime,
 			remoteMtime: file.stat.mtime,
 		};
+		await this.store.save();
 	}
 
-	private async download(remotePath: string, remoteMtime: number, state: SyncState): Promise<void> {
+	private async download(remotePath: string, remoteMtime: number): Promise<void> {
 		const localPath = this.stripBasePath(remotePath);
 		const content = await this.client.downloadFile(localPath);
 		const file = this.app.vault.getFileByPath(localPath);
@@ -217,8 +217,9 @@ export class SyncEngine {
 			if (dir) await this.app.vault.createFolder(dir).catch(() => {});
 			await this.app.vault.createBinary(localPath, content);
 		}
-		const entry = state.files[localPath] ?? { localMtime: 0, remoteMtime: 0 };
-		state.files[localPath] = { ...entry, localMtime: remoteMtime, remoteMtime };
+		const entry = this.store.files[localPath] ?? { localMtime: 0, remoteMtime: 0 };
+		this.store.files[localPath] = { ...entry, localMtime: remoteMtime, remoteMtime };
+		await this.store.save();
 	}
 
 	private async retrievePaths(): Promise<{
@@ -239,11 +240,7 @@ export class SyncEngine {
 
 		const setOfAllPaths = new Set([...localByPath.keys(), ...remoteByPath.keys()]);
 
-		return {
-			localByPath,
-			remoteByPath,
-			setOfAllPaths,
-		};
+		return { localByPath, remoteByPath, setOfAllPaths };
 	}
 
 	// Returns the subset of vault files that fall within the configured syncScope

@@ -1,27 +1,37 @@
 import type { App } from "obsidian";
 
-export interface SyncState {
-	lastSync: number; // Unix ms
-	files: Record<string, { localMtime: number; remoteMtime: number }>;
+export interface SyncFileEntry {
+	localMtime: number;
+	remoteMtime: number;
 }
-
-const EMPTY_STATE: SyncState = {
-	lastSync: 0,
-	files: {},
-};
 
 const stateFilePath = (pluginDir: string) => `${pluginDir}/state.json`;
 
-export async function loadState(app: App, pluginDir: string): Promise<SyncState> {
-	try {
-		const raw = await app.vault.adapter.read(stateFilePath(pluginDir));
-		return JSON.parse(raw);
-	} catch {
-		return { ...EMPTY_STATE };
-	}
-}
+export class StateStore {
+	lastSync = 0;
+	files: Record<string, SyncFileEntry> = {};
 
-export async function saveState(app: App, pluginDir: string, state: SyncState): Promise<void> {
-	state.lastSync = Date.now();
-	await app.vault.adapter.write(stateFilePath(pluginDir), JSON.stringify(state, null, 2));
+	constructor(
+		private app: App,
+		private pluginDir: string,
+	) {}
+
+	async load(): Promise<void> {
+		try {
+			const raw = await this.app.vault.adapter.read(stateFilePath(this.pluginDir));
+			const parsed = JSON.parse(raw);
+			this.lastSync = parsed.lastSync ?? 0;
+			this.files = parsed.files ?? {};
+		} catch {
+			this.lastSync = 0;
+			this.files = {};
+		}
+	}
+
+	async save(): Promise<void> {
+		await this.app.vault.adapter.write(
+			stateFilePath(this.pluginDir),
+			JSON.stringify({ lastSync: this.lastSync, files: this.files }, null, 2),
+		);
+	}
 }

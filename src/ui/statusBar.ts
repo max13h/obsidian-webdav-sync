@@ -1,21 +1,14 @@
 import { setIcon } from "obsidian";
 import type WebdavSync from "../main";
-import { loadState } from "../sync/state";
+import type { StateStore } from "../sync/state";
 
 export class StatusBar {
 	private readonly el: HTMLElement;
 
-	constructor(plugin: WebdavSync) {
+	constructor(plugin: WebdavSync, store: StateStore) {
 		this.el = plugin.addStatusBarItem();
 		this.el.addClass("webdav-sync-status");
-		this.setIdle(null);
-
-		void this.loadLastSync(plugin);
-	}
-
-	private async loadLastSync(plugin: WebdavSync): Promise<void> {
-		const state = await loadState(plugin.app, plugin.manifest.dir ?? ".obsidian/webdav-sync/");
-		this.setIdle(state.lastSync || null);
+		this.setIdle(store.lastSync || null);
 	}
 
 	public setIdle(lastSync: number | null): void {

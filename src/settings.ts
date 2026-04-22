@@ -267,8 +267,8 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 				toggle.setValue(settings.statusBarEnabled).onChange(async (value) => {
 					settings.statusBarEnabled = value;
 					await this.plugin.saveSettings();
-					if (value) {
-						this.plugin.statusBar = new StatusBar(this.plugin);
+					if (value && this.plugin.store) {
+						this.plugin.statusBar = new StatusBar(this.plugin, this.plugin.store);
 					} else {
 						this.plugin.statusBar?.destroy();
 						this.plugin.statusBar = null;
