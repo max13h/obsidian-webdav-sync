@@ -58,7 +58,7 @@ describe("classify", () => {
 
 		await makeEngine().sync();
 
-		expect(mockClient.downloadFile).toHaveBeenCalledWith("/vault/notes/a.md");
+		expect(mockClient.downloadFile).toHaveBeenCalledWith("notes/a.md");
 	});
 
 	it("both sides, untracked → conflict (defaults to newest-wins → upload when local is newer)", async () => {
@@ -96,7 +96,7 @@ describe("classify", () => {
 
 		await makeEngine().sync();
 
-		expect(mockClient.downloadFile).toHaveBeenCalledWith("/vault/notes/a.md");
+		expect(mockClient.downloadFile).toHaveBeenCalledWith("notes/a.md");
 		expect(mockClient.uploadFile).not.toHaveBeenCalled();
 	});
 
@@ -149,7 +149,7 @@ describe("classify", () => {
 
 		await makeEngine().sync();
 
-		expect(mockClient.deleteFile).toHaveBeenCalledWith("/vault/notes/a.md");
+		expect(mockClient.deleteFile).toHaveBeenCalledWith("notes/a.md");
 	});
 });
 
@@ -237,7 +237,7 @@ describe("execute — deletion handling guards", () => {
 		await makeEngine({ deletionHandling: "mirror" }).sync();
 
 		expect(mockVault.delete).toHaveBeenCalledWith(local);
-		expect(mockClient.deleteFile).toHaveBeenCalledWith("/vault/remote-deleted.md");
+		expect(mockClient.deleteFile).toHaveBeenCalledWith("remote-deleted.md");
 	});
 });
 

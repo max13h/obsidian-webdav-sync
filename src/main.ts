@@ -20,16 +20,28 @@ export default class WebdavSync extends Plugin {
 
 		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
 
-		this.client = new Client(this.app, this.settings);
-		this.engine = new SyncEngine(this.app, this.client, this.settings);
+		this.initializeComponents(this.settings);
+		this.registerCommands();
+		this.addSettingTab(new WebdavSyncSettingTab(this.app, this));
 
-		if (this.settings.statusBarEnabled) {
+		if (this.settings.syncOnStartup) {
+			void this.runSync();
+		}
+	}
+
+	private initializeComponents(settings: WebdavSyncSettings) {
+		this.client = new Client(this.app, settings);
+		this.engine = new SyncEngine(this.app, this.client, settings);
+
+		if (settings.statusBarEnabled) {
 			this.statusBar = new StatusBar(this);
 		}
 
-		this.scheduler = new Scheduler(this.app, () => this.runSync(), this.settings);
+		this.scheduler = new Scheduler(this.app, () => this.runSync(), settings);
 		this.scheduler.start();
+	}
 
+	private registerCommands() {
 		this.addCommand({
 			id: "webdav-sync",
 			name: "Sync now",
@@ -49,12 +61,6 @@ export default class WebdavSync extends Plugin {
 				);
 			},
 		});
-
-		this.addSettingTab(new WebdavSyncSettingTab(this.app, this));
-
-		if (this.settings.syncOnStartup) {
-			void this.runSync();
-		}
 	}
 
 	onunload() {

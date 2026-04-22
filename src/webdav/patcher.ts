@@ -25,9 +25,19 @@ export const patchWebdavFetch = () => {
 		if (init != null && init.body != null) {
 			if (typeof init.body === "string" || init.body instanceof ArrayBuffer) {
 				body = init.body;
-			} else {
-				body = String(init.body);
+			} else if (init.body instanceof Uint8Array) {
+				// Buffer / Uint8Array — slice out the exact bytes to get a plain ArrayBuffer
+				body = init.body.buffer.slice(
+					init.body.byteOffset,
+					init.body.byteOffset + init.body.byteLength,
+				);
+			} else if (typeof (init.body as { arrayBuffer?: unknown }).arrayBuffer === "function") {
+				// Blob or similar — materialise synchronously via arrayBuffer()
+				body = await (init.body as Blob).arrayBuffer();
 			}
+			// ReadableStream and other exotic types are not supported by requestUrl;
+			// leaving body undefined causes the request to proceed without a body,
+			// which is wrong for uploads but at least won't crash Electron.
 		}
 
 		const params: RequestUrlParam = {

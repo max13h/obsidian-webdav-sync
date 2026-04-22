@@ -159,8 +159,9 @@ export class SyncEngine {
 			} else if (action.type === "delete-remote") {
 				if (syncDirection === "remote-to-local") continue;
 				if (deletionHandling === "never-delete-remote") continue;
-				await this.client.deleteFile(action.remotePath);
-				delete state.files[this.stripBasePath(action.remotePath)];
+				const localPath = this.stripBasePath(action.remotePath);
+				await this.client.deleteFile(localPath);
+				delete state.files[localPath];
 			} else if (action.type === "delete-local") {
 				if (syncDirection === "local-to-remote") continue;
 				if (deletionHandling === "never-delete-local") continue;
@@ -257,7 +258,7 @@ export class SyncEngine {
 	 */
 	private async download(remotePath: string, remoteMtime: number, state: SyncState): Promise<void> {
 		const localPath = this.stripBasePath(remotePath);
-		const content = await this.client.downloadFile(remotePath);
+		const content = await this.client.downloadFile(localPath);
 		const file = this.app.vault.getFileByPath(localPath);
 		if (file) {
 			await this.app.vault.modifyBinary(file, content);
