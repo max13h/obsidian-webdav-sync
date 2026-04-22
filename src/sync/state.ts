@@ -1,7 +1,5 @@
 import type { App } from "obsidian";
 
-const STATE_FILE = ".webdav-sync-state.json";
-
 export interface SyncState {
 	lastSync: number; // Unix ms
 	files: Record<string, { localMtime: number; remoteMtime: number }>;
@@ -12,23 +10,27 @@ const EMPTY_STATE: SyncState = {
 	files: {},
 };
 
-export async function loadState(app: App): Promise<SyncState> {
-	const file = app.vault.getFileByPath(STATE_FILE);
-	if (!file) return { ...EMPTY_STATE, files: {} };
+const stateFilePath = (pluginDir: string) => `${pluginDir}/state.json`;
+
+export async function loadState(app: App, pluginDir: string): Promise<SyncState> {
+	const file = app.vault.getFileByPath(stateFilePath(pluginDir));
+	if (!file) return { ...EMPTY_STATE };
+
 	try {
 		const raw = await app.vault.read(file);
-		return JSON.parse(raw) as SyncState;
+		return JSON.parse(raw);
 	} catch {
-		return { ...EMPTY_STATE, files: {} };
+		return { ...EMPTY_STATE };
 	}
 }
 
-export async function saveState(app: App, state: SyncState): Promise<void> {
+export async function saveState(app: App, pluginDir: string, state: SyncState): Promise<void> {
 	const content = JSON.stringify(state, null, 2);
-	const file = app.vault.getFileByPath(STATE_FILE);
+	const path = stateFilePath(pluginDir);
+	const file = app.vault.getFileByPath(path);
 	if (file) {
 		await app.vault.modify(file, content);
 	} else {
-		await app.vault.create(STATE_FILE, content);
+		await app.vault.create(path, content);
 	}
 }

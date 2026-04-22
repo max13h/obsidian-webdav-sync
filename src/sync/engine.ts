@@ -25,10 +25,11 @@ export class SyncEngine {
 		private app: App,
 		private client: Client,
 		private settings: WebdavSyncSettings,
+		private pluginDir: string,
 	) {}
 
 	async sync(): Promise<void> {
-		const state: SyncState = await loadState(this.app);
+		const state: SyncState = await loadState(this.app, this.pluginDir);
 
 		const { localByPath, remoteByPath, setOfAllPaths } = await this.retrievePaths();
 		const actions: Action[] = [];
@@ -41,7 +42,7 @@ export class SyncEngine {
 		}
 
 		await this.execute(actions, state);
-		await saveState(this.app, state);
+		await saveState(this.app, this.pluginDir, state);
 	}
 
 	/**
