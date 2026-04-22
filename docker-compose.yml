@@ -1,0 +1,10 @@
+services:
+  webdav:
+    image: hacdias/webdav:latest
+    ports:
+      - "8080:8080"
+    tmpfs:
+      - /data
+    volumes:
+      - ./tests/docker/webdav-config.yaml:/config.yaml:ro
+    command: ["-c", "/config.yaml"]
