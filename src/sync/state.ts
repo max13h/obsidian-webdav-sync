@@ -13,11 +13,8 @@ const EMPTY_STATE: SyncState = {
 const stateFilePath = (pluginDir: string) => `${pluginDir}/state.json`;
 
 export async function loadState(app: App, pluginDir: string): Promise<SyncState> {
-	const file = app.vault.getFileByPath(stateFilePath(pluginDir));
-	if (!file) return { ...EMPTY_STATE };
-
 	try {
-		const raw = await app.vault.read(file);
+		const raw = await app.vault.adapter.read(stateFilePath(pluginDir));
 		return JSON.parse(raw);
 	} catch {
 		return { ...EMPTY_STATE };
@@ -25,12 +22,6 @@ export async function loadState(app: App, pluginDir: string): Promise<SyncState>
 }
 
 export async function saveState(app: App, pluginDir: string, state: SyncState): Promise<void> {
-	const content = JSON.stringify(state, null, 2);
-	const path = stateFilePath(pluginDir);
-	const file = app.vault.getFileByPath(path);
-	if (file) {
-		await app.vault.modify(file, content);
-	} else {
-		await app.vault.create(path, content);
-	}
+	state.lastSync = Date.now();
+	await app.vault.adapter.write(stateFilePath(pluginDir), JSON.stringify(state, null, 2));
 }
