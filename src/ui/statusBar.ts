@@ -1,38 +1,46 @@
 import { setIcon } from "obsidian";
 import type WebdavSync from "../main";
+import { loadState } from "../sync/state";
 
 export class StatusBar {
-	private el: HTMLElement;
+	private readonly el: HTMLElement;
 
 	constructor(plugin: WebdavSync) {
 		this.el = plugin.addStatusBarItem();
 		this.el.addClass("webdav-sync-status");
 		this.setIdle(null);
+
+		void this.loadLastSync(plugin);
 	}
 
-	setIdle(lastSync: number | null): void {
+	private async loadLastSync(plugin: WebdavSync): Promise<void> {
+		const state = await loadState(plugin.app, plugin.manifest.dir ?? ".obsidian/webdav-sync/");
+		this.setIdle(state.lastSync || null);
+	}
+
+	public setIdle(lastSync: number | null): void {
 		this.el.empty();
-		this.el.removeClass("webdav-sync-error");
+		this.el.removeClasses(["webdav-sync-error", "spinning-icon"]);
 		setIcon(this.el, "refresh-cw");
 		const label = lastSync ? `Synced ${this.formatTime(lastSync)}` : "Never synced";
 		this.el.createSpan({ text: ` ${label}` });
 	}
 
-	setSyncing(): void {
+	public setSyncing(): void {
 		this.el.empty();
 		this.el.removeClass("webdav-sync-error");
 		setIcon(this.el, "loader-2");
 		this.el.createSpan({ text: " Syncing…" });
 	}
 
-	setError(message: string): void {
+	public setError(message: string): void {
 		this.el.empty();
 		this.el.addClass("webdav-sync-error");
 		setIcon(this.el, "alert-circle");
 		this.el.createSpan({ text: ` ${message}` });
 	}
 
-	destroy(): void {
+	public destroy(): void {
 		this.el.remove();
 	}
 

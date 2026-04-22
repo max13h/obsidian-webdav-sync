@@ -2,6 +2,7 @@ import { type App, Notice, PluginSettingTab, SecretComponent, Setting } from "ob
 import { assertDefined } from "./errors";
 import type WebdavSync from "./main";
 import { StatusBar } from "./ui/statusBar";
+import { SyncIndicator } from "./ui/syncIndicator";
 
 export type SyncDirection = "two-way" | "local-to-remote" | "remote-to-local";
 export type ConflictResolution = "remote-wins" | "local-wins" | "newest-wins" | "ask";
@@ -27,6 +28,7 @@ export interface WebdavSyncSettings {
 	periodicSyncInterval: number;
 	// Notifications
 	statusBarEnabled: boolean;
+	syncIndicatorEnabled: boolean;
 	notificationsEnabled: boolean;
 }
 
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	periodicSync: false,
 	periodicSyncInterval: 5,
 	statusBarEnabled: true,
+	syncIndicatorEnabled: true,
 	notificationsEnabled: true,
 };
 
@@ -269,6 +272,22 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 					} else {
 						this.plugin.statusBar?.destroy();
 						this.plugin.statusBar = null;
+					}
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName("Toolbar sync indicator")
+			.setDesc("Show a spinning icon in the toolbar while a sync is in progress.")
+			.addToggle((toggle) =>
+				toggle.setValue(settings.syncIndicatorEnabled).onChange(async (value) => {
+					settings.syncIndicatorEnabled = value;
+					await this.plugin.saveSettings();
+					if (value) {
+						this.plugin.syncIndicator = new SyncIndicator();
+					} else {
+						this.plugin.syncIndicator?.destroy();
+						this.plugin.syncIndicator = null;
 					}
 				}),
 			);
