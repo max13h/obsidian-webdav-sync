@@ -36,6 +36,17 @@ function makeMockClient(remoteFiles: FileStat[] = []) {
 	};
 }
 
+function deleteLocalSetup() {
+	const app = new MockApp();
+	const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+	const file = makeTFile("notes.md", 1000);
+	store.files["notes.md"] = { localMtime: 1000, remoteMtime: 1000 };
+	const client = makeMockClient([]);
+	app.vault.addFile(file);
+	vi.spyOn(app.vault, "delete");
+	return { app, store, file, client };
+}
+
 function makeEngine(
 	app: MockApp,
 	client: ReturnType<typeof makeMockClient> | Client,
@@ -170,13 +181,7 @@ describe("classify: tracked file, both sides changed → conflict", () => {
 
 describe("classify: tracked file, remote deleted → delete-local", () => {
 	it("calls vault.delete when deletionHandling allows it", async () => {
-		const app = new MockApp();
-		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
-		const file = makeTFile("notes.md", 1000);
-		store.files["notes.md"] = { localMtime: 1000, remoteMtime: 1000 };
-		const client = makeMockClient([]);
-		app.vault.addFile(file);
-		vi.spyOn(app.vault, "delete");
+		const { app, store, file, client } = deleteLocalSetup();
 
 		await makeEngine(app, client, makeSettings({ deletionHandling: "mirror" }), store).sync();
 
@@ -268,6 +273,23 @@ describe("syncScope filtering", () => {
 		);
 	});
 
+	it("full-vault includes .obsidian/ files that exclude-obsidian would skip", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		const client = makeMockClient([]);
+		app.vault.addFile(
+			makeTFile(".obsidian/workspace.json", 1000),
+			new TextEncoder().encode("ws").buffer as ArrayBuffer,
+		);
+
+		await makeEngine(app, client, makeSettings({ syncScope: "full-vault" }), store).sync();
+
+		expect(client.uploadFile).toHaveBeenCalledWith(
+			".obsidian/workspace.json",
+			expect.any(ArrayBuffer),
+		);
+	});
+
 	it("custom-folder only uploads files inside the configured folder", async () => {
 		const app = new MockApp();
 		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
@@ -339,13 +361,7 @@ describe("execute: deletionHandling guards", () => {
 	});
 
 	it("skips delete-local when deletionHandling is never-delete-local", async () => {
-		const app = new MockApp();
-		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
-		const file = makeTFile("notes.md", 1000);
-		store.files["notes.md"] = { localMtime: 1000, remoteMtime: 1000 };
-		const client = makeMockClient([]);
-		app.vault.addFile(file);
-		vi.spyOn(app.vault, "delete");
+		const { app, store, client } = deleteLocalSetup();
 
 		await makeEngine(
 			app,
@@ -440,6 +456,34 @@ describe("resolveConflict", () => {
 		).sync();
 		expect(client.downloadFile).toHaveBeenCalled();
 		expect(client.uploadFile).not.toHaveBeenCalled();
+	});
+
+	it("ask falls back to newest-wins: local newer → uploads", async () => {
+		vi.spyOn(console, "warn").mockImplementation(() => {});
+		const { app, store, client } = conflictSetup(3000, 1000);
+		await makeEngine(
+			app,
+			client,
+			makeSettings({ syncDirection: "two-way", conflictResolution: "ask" }),
+			store,
+		).sync();
+		expect(client.uploadFile).toHaveBeenCalled();
+		expect(client.downloadFile).not.toHaveBeenCalled();
+		vi.restoreAllMocks();
+	});
+
+	it("ask falls back to newest-wins: remote newer → downloads", async () => {
+		vi.spyOn(console, "warn").mockImplementation(() => {});
+		const { app, store, client } = conflictSetup(1000, 3000);
+		await makeEngine(
+			app,
+			client,
+			makeSettings({ syncDirection: "two-way", conflictResolution: "ask" }),
+			store,
+		).sync();
+		expect(client.downloadFile).toHaveBeenCalled();
+		expect(client.uploadFile).not.toHaveBeenCalled();
+		vi.restoreAllMocks();
 	});
 });
 

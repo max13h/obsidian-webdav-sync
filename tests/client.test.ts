@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { WebdavSyncSettings } from "../src/settings.js";
 import { DEFAULT_SETTINGS } from "../src/settings.js";
 import { Client } from "../src/webdav/client.js";
@@ -32,8 +32,10 @@ describe("Client", () => {
 	});
 
 	it("testConnection returns false for an unreachable server", async () => {
+		vi.spyOn(console, "error").mockImplementation(() => {});
 		const client = makeClient({ serverUrl: "http://localhost:9999" });
 		expect(await client.testConnection()).toBe(false);
+		vi.restoreAllMocks();
 	});
 
 	it("uploadFile then downloadFile round-trips content", async () => {
@@ -80,5 +82,28 @@ describe("Client", () => {
 		const client = makeClient();
 		const prefix = uniquePrefix();
 		await expect(client.ensureDirectory(`${prefix}/a/b/c`)).resolves.not.toThrow();
+	});
+
+	it("files are accessible under a non-empty remoteBasePath", async () => {
+		const base = `/base-${crypto.randomUUID()}`;
+		const client = makeClient({ remoteBasePath: base });
+		const content = new TextEncoder().encode("base-path content").buffer as ArrayBuffer;
+
+		await client.ensureDirectory("sub");
+		await client.uploadFile("sub/note.txt", content);
+		const downloaded = await client.downloadFile("sub/note.txt");
+
+		expect(new TextDecoder().decode(downloaded)).toBe("base-path content");
+
+		const files = await client.listAllFiles("sub");
+		expect(files).toHaveLength(1);
+	});
+
+	it("testConnection returns false when credentials are wrong", async () => {
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const app = new MockApp("wrong-password");
+		const client = new Client(app as never, makeSettings());
+		expect(await client.testConnection()).toBe(false);
+		vi.restoreAllMocks();
 	});
 });
