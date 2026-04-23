@@ -17,7 +17,9 @@ export const patchWebdavFetch = () => {
 			throw: false,
 		});
 
-		return new Response(res.arrayBuffer, { status: res.status, headers: new Headers(res.headers) });
+		const nullBodyStatuses = new Set([101, 204, 205, 304]);
+		const responseBody = nullBodyStatuses.has(res.status) ? null : res.arrayBuffer;
+		return new Response(responseBody, { status: res.status, headers: new Headers(res.headers) });
 	});
 };
 

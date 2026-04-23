@@ -5,6 +5,7 @@ export class Scheduler {
 	private intervalId: number | null = null;
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	private modifyRef: EventRef | null = null;
+	private syncing = false;
 
 	constructor(
 		private app: App,
@@ -15,15 +16,16 @@ export class Scheduler {
 	start(): void {
 		if (this.settings.periodicSync) {
 			const ms = this.settings.periodicSyncInterval * 60 * 1_000;
-			this.intervalId = window.setInterval(() => void this.syncFn(), ms);
+			this.intervalId = window.setInterval(() => {
+				if (!this.syncing) void this.syncFn();
+			}, ms);
 		}
 
-		if (this.settings.syncOnSave) {
-			this.modifyRef = this.app.vault.on("modify", () => {
-				if (this.debounceTimer !== null) clearTimeout(this.debounceTimer);
-				this.debounceTimer = setTimeout(() => void this.syncFn(), 5_000);
-			});
-		}
+		this.modifyRef = this.app.vault.on("modify", () => {
+			if (!this.settings.syncOnSave || this.syncing) return;
+			if (this.debounceTimer !== null) clearTimeout(this.debounceTimer);
+			this.debounceTimer = setTimeout(() => void this.syncFn(), 5_000);
+		});
 	}
 
 	stop(): void {
@@ -38,6 +40,14 @@ export class Scheduler {
 		if (this.modifyRef !== null) {
 			this.app.vault.offref(this.modifyRef);
 			this.modifyRef = null;
+		}
+	}
+
+	setSyncing(value: boolean): void {
+		this.syncing = value;
+		if (value && this.debounceTimer !== null) {
+			clearTimeout(this.debounceTimer);
+			this.debounceTimer = null;
 		}
 	}
 }

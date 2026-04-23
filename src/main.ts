@@ -81,6 +81,7 @@ export default class WebdavSync extends Plugin {
 	private async runSync(): Promise<void> {
 		assertDefined(this.engine, "Sync engine not initialized.");
 		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
+		this.scheduler?.setSyncing(true);
 		this.statusBar?.setSyncing();
 		this.syncIndicator?.setSyncing();
 		try {
@@ -99,6 +100,8 @@ export default class WebdavSync extends Plugin {
 				new Notice(`WebDAV sync failed: ${message}`);
 			}
 			console.error("[webdav-sync]", err);
+		} finally {
+			this.scheduler?.setSyncing(false);
 		}
 	}
 

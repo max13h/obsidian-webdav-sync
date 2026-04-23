@@ -176,7 +176,7 @@ describe("Scheduler", () => {
 			expect(vault.offref).toHaveBeenCalledTimes(1);
 		});
 
-		it("stop() does not call vault.offref when syncOnSave is disabled", () => {
+		it("stop() calls vault.offref even when syncOnSave is disabled", () => {
 			const vault = makeVault();
 			const scheduler = makeScheduler(vault, vi.fn().mockResolvedValue(undefined), {
 				syncOnSave: false,
@@ -185,7 +185,51 @@ describe("Scheduler", () => {
 			scheduler.start();
 			scheduler.stop();
 
-			expect(vault.offref).not.toHaveBeenCalled();
+			expect(vault.offref).toHaveBeenCalledTimes(1);
+		});
+
+		it("modify events are ignored while syncing is active", async () => {
+			const syncFn = vi.fn().mockResolvedValue(undefined);
+			const vault = makeVault();
+			const scheduler = makeScheduler(vault, syncFn, { syncOnSave: true });
+
+			scheduler.start();
+			scheduler.setSyncing(true);
+			vault.trigger("modify");
+			await vi.advanceTimersByTimeAsync(10_000);
+
+			expect(syncFn).not.toHaveBeenCalled();
+			scheduler.stop();
+		});
+
+		it("setSyncing(true) cancels a pending debounce timer", async () => {
+			const syncFn = vi.fn().mockResolvedValue(undefined);
+			const vault = makeVault();
+			const scheduler = makeScheduler(vault, syncFn, { syncOnSave: true });
+
+			scheduler.start();
+			vault.trigger("modify");
+			scheduler.setSyncing(true);
+			await vi.advanceTimersByTimeAsync(10_000);
+
+			expect(syncFn).not.toHaveBeenCalled();
+			scheduler.stop();
+		});
+
+		it("modify events resume after setSyncing(false)", async () => {
+			const syncFn = vi.fn().mockResolvedValue(undefined);
+			const vault = makeVault();
+			const scheduler = makeScheduler(vault, syncFn, { syncOnSave: true });
+
+			scheduler.start();
+			scheduler.setSyncing(true);
+			vault.trigger("modify");
+			scheduler.setSyncing(false);
+			vault.trigger("modify");
+			await vi.advanceTimersByTimeAsync(5_000);
+
+			expect(syncFn).toHaveBeenCalledTimes(1);
+			scheduler.stop();
 		});
 	});
 });
