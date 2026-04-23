@@ -57,6 +57,11 @@ export class Client {
 		await client.deleteFile(this.resolvePath(remotePath));
 	}
 
+	async moveFile(srcPath: string, destPath: string): Promise<void> {
+		const client = await this.getClient();
+		await client.moveFile(this.resolvePath(srcPath), this.resolvePath(destPath));
+	}
+
 	async ensureDirectory(remotePath: string): Promise<void> {
 		const client = await this.getClient();
 		const resolved = this.resolvePath(remotePath);

@@ -84,6 +84,22 @@ describe("Client", () => {
 		await expect(client.ensureDirectory(`${prefix}/a/b/c`)).resolves.not.toThrow();
 	});
 
+	it("moveFile renames a file on the server", async () => {
+		const client = makeClient();
+		const prefix = uniquePrefix();
+		await client.ensureDirectory(prefix);
+		await client.uploadFile(
+			`${prefix}/original.txt`,
+			new TextEncoder().encode("data").buffer as ArrayBuffer,
+		);
+
+		await client.moveFile(`${prefix}/original.txt`, `${prefix}/renamed.txt`);
+
+		const files = await client.listAllFiles(prefix);
+		expect(files.map((f) => f.basename)).toContain("renamed.txt");
+		expect(files.map((f) => f.basename)).not.toContain("original.txt");
+	});
+
 	it("files are accessible under a non-empty remoteBasePath", async () => {
 		const base = `/base-${crypto.randomUUID()}`;
 		const client = makeClient({ remoteBasePath: base });

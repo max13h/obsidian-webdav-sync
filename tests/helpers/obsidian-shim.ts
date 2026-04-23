@@ -2,6 +2,18 @@
 // Every named export used by source files at module-evaluation time must be present,
 // otherwise ESM linking throws a SyntaxError before tests even run.
 
+export class TFile {
+	path = "";
+	extension = "";
+	parent: { path: string } | null = null;
+	stat = { mtime: 0, ctime: 0, size: 0 };
+}
+
+export class TFolder {
+	path = "";
+	children: unknown[] = [];
+}
+
 export class Notice {}
 
 export class PluginSettingTab {

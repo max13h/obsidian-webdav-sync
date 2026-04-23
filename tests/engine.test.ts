@@ -1,3 +1,4 @@
+import { TFile, TFolder } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileStat } from "webdav";
 import type { WebdavSyncSettings } from "../src/settings.js";
@@ -31,6 +32,7 @@ function makeMockClient(remoteFiles: FileStat[] = []) {
 		uploadFile: vi.fn(async () => {}),
 		downloadFile: vi.fn(async () => new ArrayBuffer(0)),
 		deleteFile: vi.fn(async () => {}),
+		moveFile: vi.fn(async () => {}),
 		ensureDirectory: vi.fn(async () => {}),
 		testConnection: vi.fn(async () => true),
 	};
@@ -484,6 +486,184 @@ describe("resolveConflict", () => {
 		expect(client.downloadFile).toHaveBeenCalled();
 		expect(client.uploadFile).not.toHaveBeenCalled();
 		vi.restoreAllMocks();
+	});
+});
+
+// ─── registerVaultEvents() ────────────────────────────────────────────────────
+
+function makeTFileInstance(path: string, mtime = 1000): TFile {
+	return Object.assign(new TFile(), {
+		path,
+		extension: path.split(".").pop() ?? "",
+		parent: path.includes("/") ? { path: path.split("/").slice(0, -1).join("/") } : null,
+		stat: { mtime, ctime: mtime, size: 0 },
+	});
+}
+
+function makeTFolderInstance(path: string): TFolder {
+	return Object.assign(new TFolder(), { path });
+}
+
+describe("registerVaultEvents: rename file", () => {
+	it("calls moveFile and updates store when file is tracked", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		store.files["old.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		const client = makeMockClient();
+		const engine = makeEngine(app, client, makeSettings(), store);
+		engine.registerVaultEvents(vi.fn());
+
+		const renamed = makeTFileInstance("new.md");
+		await app.vault.emit("rename", renamed, "old.md");
+
+		expect(client.moveFile).toHaveBeenCalledWith("old.md", "new.md");
+		expect(store.files["new.md"]).toBeDefined();
+		expect(store.files["old.md"]).toBeUndefined();
+	});
+
+	it("does nothing when file is not tracked", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		const client = makeMockClient();
+		const engine = makeEngine(app, client, makeSettings(), store);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("rename", makeTFileInstance("new.md"), "old.md");
+
+		expect(client.moveFile).not.toHaveBeenCalled();
+	});
+
+	it("does nothing when syncDirection is remote-to-local", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		store.files["old.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		const client = makeMockClient();
+		const engine = makeEngine(
+			app,
+			client,
+			makeSettings({ syncDirection: "remote-to-local" }),
+			store,
+		);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("rename", makeTFileInstance("new.md"), "old.md");
+
+		expect(client.moveFile).not.toHaveBeenCalled();
+	});
+});
+
+describe("registerVaultEvents: rename folder", () => {
+	it("calls moveFile and renames all tracked paths inside the folder", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		store.files["docs/a.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		store.files["docs/b.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		const client = makeMockClient();
+		const engine = makeEngine(app, client, makeSettings(), store);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("rename", makeTFolderInstance("archive"), "docs");
+
+		expect(client.moveFile).toHaveBeenCalledWith("docs", "archive");
+		expect(store.files["archive/a.md"]).toBeDefined();
+		expect(store.files["archive/b.md"]).toBeDefined();
+		expect(store.files["docs/a.md"]).toBeUndefined();
+		expect(store.files["docs/b.md"]).toBeUndefined();
+	});
+
+	it("does nothing when no tracked files are inside the folder", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		const client = makeMockClient();
+		const engine = makeEngine(app, client, makeSettings(), store);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("rename", makeTFolderInstance("archive"), "docs");
+
+		expect(client.moveFile).not.toHaveBeenCalled();
+	});
+});
+
+describe("registerVaultEvents: delete file", () => {
+	it("calls deleteFile and removes from store when file is tracked", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		store.files["notes.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		const client = makeMockClient();
+		const engine = makeEngine(app, client, makeSettings({ deletionHandling: "mirror" }), store);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("delete", makeTFileInstance("notes.md"));
+
+		expect(client.deleteFile).toHaveBeenCalledWith("notes.md");
+		expect(store.files["notes.md"]).toBeUndefined();
+	});
+
+	it("does nothing when file is not tracked", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		const client = makeMockClient();
+		const engine = makeEngine(app, client, makeSettings(), store);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("delete", makeTFileInstance("notes.md"));
+
+		expect(client.deleteFile).not.toHaveBeenCalled();
+	});
+
+	it("does nothing when syncDirection is remote-to-local", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		store.files["notes.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		const client = makeMockClient();
+		const engine = makeEngine(
+			app,
+			client,
+			makeSettings({ syncDirection: "remote-to-local" }),
+			store,
+		);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("delete", makeTFileInstance("notes.md"));
+
+		expect(client.deleteFile).not.toHaveBeenCalled();
+	});
+
+	it("does nothing when deletionHandling is never-delete-remote", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		store.files["notes.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		const client = makeMockClient();
+		const engine = makeEngine(
+			app,
+			client,
+			makeSettings({ deletionHandling: "never-delete-remote" }),
+			store,
+		);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("delete", makeTFileInstance("notes.md"));
+
+		expect(client.deleteFile).not.toHaveBeenCalled();
+	});
+});
+
+describe("registerVaultEvents: delete folder", () => {
+	it("calls deleteFile for each tracked file inside and removes them from store", async () => {
+		const app = new MockApp();
+		const store = new StateStore(app as never, ".obsidian/plugins/webdav-sync");
+		store.files["docs/a.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		store.files["docs/b.md"] = { localMtime: 1000, remoteMtime: 1000 };
+		const client = makeMockClient();
+		const engine = makeEngine(app, client, makeSettings({ deletionHandling: "mirror" }), store);
+		engine.registerVaultEvents(vi.fn());
+
+		await app.vault.emit("delete", makeTFolderInstance("docs"));
+
+		expect(client.deleteFile).toHaveBeenCalledWith("docs/a.md");
+		expect(client.deleteFile).toHaveBeenCalledWith("docs/b.md");
+		expect(store.files["docs/a.md"]).toBeUndefined();
+		expect(store.files["docs/b.md"]).toBeUndefined();
 	});
 });
 

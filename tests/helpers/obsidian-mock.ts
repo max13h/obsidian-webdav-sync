@@ -32,7 +32,20 @@ export class MockVaultAdapter {
 
 export class MockVault {
 	private _files = new Map<string, { file: TFileStub; content: ArrayBuffer }>();
+	private _handlers = new Map<string, ((...args: unknown[]) => unknown)[]>();
 	adapter = new MockVaultAdapter();
+
+	on(event: string, callback: (...args: unknown[]) => unknown): { id: symbol } {
+		if (!this._handlers.has(event)) this._handlers.set(event, []);
+		this._handlers.get(event)?.push(callback);
+		return { id: Symbol() };
+	}
+
+	async emit(event: string, ...args: unknown[]): Promise<void> {
+		for (const handler of this._handlers.get(event) ?? []) {
+			await handler(...args);
+		}
+	}
 
 	addFile(file: TFileStub, content: ArrayBuffer = new ArrayBuffer(0)) {
 		this._files.set(file.path, { file, content });

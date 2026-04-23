@@ -1,5 +1,5 @@
-import type { App, TFile } from "obsidian";
-import { Notice } from "obsidian";
+import type { App, EventRef } from "obsidian";
+import { Notice, TFile, TFolder } from "obsidian";
 import type { FileStat } from "webdav";
 import type { WebdavSyncSettings } from "../settings";
 import type { Client } from "../webdav/client";
@@ -27,6 +27,81 @@ export class SyncEngine {
 		private settings: WebdavSyncSettings,
 		private store: StateStore,
 	) {}
+
+	registerVaultEvents(registerEvent: (event: EventRef) => void): void {
+		registerEvent(
+			this.app.vault.on("rename", async (abstractFile, oldPath) => {
+				if (this.settings.syncDirection === "remote-to-local") return;
+
+				if (abstractFile instanceof TFile) {
+					const tracked = this.store.files[oldPath];
+					if (!tracked) return;
+					try {
+						await this.client.moveFile(oldPath, abstractFile.path);
+						this.store.files[abstractFile.path] = tracked;
+						delete this.store.files[oldPath];
+						await this.store.save();
+					} catch (err) {
+						console.error("[webdav-sync] rename failed", err);
+						if (this.settings.notificationsEnabled)
+							new Notice(`WebDAV sync: rename failed for "${oldPath}"`);
+					}
+				} else if (abstractFile instanceof TFolder) {
+					const prefix = `${oldPath}/`;
+					const affected = Object.keys(this.store.files).filter((p) => p.startsWith(prefix));
+					if (affected.length === 0) return;
+					try {
+						await this.client.moveFile(oldPath, abstractFile.path);
+						for (const oldFilePath of affected) {
+							const newFilePath = `${abstractFile.path}/${oldFilePath.slice(prefix.length)}`;
+							const entry = this.store.files[oldFilePath];
+							if (entry) this.store.files[newFilePath] = entry;
+							delete this.store.files[oldFilePath];
+						}
+						await this.store.save();
+					} catch (err) {
+						console.error("[webdav-sync] folder rename failed", err);
+						if (this.settings.notificationsEnabled)
+							new Notice(`WebDAV sync: folder rename failed for "${oldPath}"`);
+					}
+				}
+			}),
+		);
+
+		registerEvent(
+			this.app.vault.on("delete", async (abstractFile) => {
+				if (this.settings.syncDirection === "remote-to-local") return;
+				if (this.settings.deletionHandling === "never-delete-remote") return;
+
+				if (abstractFile instanceof TFile) {
+					if (!this.store.files[abstractFile.path]) return;
+					try {
+						await this.client.deleteFile(abstractFile.path);
+						delete this.store.files[abstractFile.path];
+						await this.store.save();
+					} catch (err) {
+						console.error("[webdav-sync] delete failed", err);
+						if (this.settings.notificationsEnabled)
+							new Notice(`WebDAV sync: delete failed for "${abstractFile.path}"`);
+					}
+				} else if (abstractFile instanceof TFolder) {
+					const prefix = `${abstractFile.path}/`;
+					const affected = Object.keys(this.store.files).filter((p) => p.startsWith(prefix));
+					for (const path of affected) {
+						try {
+							await this.client.deleteFile(path);
+						} catch (err) {
+							console.error("[webdav-sync] delete failed for", path, err);
+							if (this.settings.notificationsEnabled)
+								new Notice(`WebDAV sync: delete failed for "${path}"`);
+						}
+						delete this.store.files[path];
+					}
+					if (affected.length > 0) await this.store.save();
+				}
+			}),
+		);
+	}
 
 	async sync(): Promise<void> {
 		const { localByPath, remoteByPath, setOfAllPaths } = await this.retrievePaths();

@@ -30,11 +30,16 @@ export default class WebdavSync extends Plugin {
 		this.client = new Client(this.app, this.settings);
 		this.engine = new SyncEngine(this.app, this.client, this.settings, this.store);
 		this.scheduler = new Scheduler(this.app, () => this.runSync(), this.settings);
-		this.scheduler.start();
 
 		this.registerCommandsAndSettings();
 
-		if (this.settings.syncOnStartup) void this.runSync();
+		this.app.workspace.onLayoutReady(() => {
+			assertDefined(this.scheduler, "Scheduler not initialized.");
+			this.scheduler.start();
+			assertDefined(this.engine, "Sync engine not initialized.");
+			this.engine.registerVaultEvents(this.registerEvent.bind(this));
+			if (this.settings?.syncOnStartup) void this.runSync();
+		});
 	}
 
 	onunload() {
