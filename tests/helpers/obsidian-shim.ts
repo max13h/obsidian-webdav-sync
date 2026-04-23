@@ -46,3 +46,10 @@ export class SecretComponent {
 		return this;
 	}
 }
+
+// Never called in tests — exists so patcher.ts links without crashing.
+export async function requestUrl(
+	_params: unknown,
+): Promise<{ status: number; arrayBuffer: ArrayBuffer; headers: Record<string, string> }> {
+	return { status: 200, arrayBuffer: new ArrayBuffer(0), headers: {} };
+}

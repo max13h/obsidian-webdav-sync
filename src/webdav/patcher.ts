@@ -21,7 +21,7 @@ export const patchWebdavFetch = () => {
 	});
 };
 
-function normalizeBody(body: RequestInit["body"]): RequestUrlParam["body"] {
+export function normalizeBody(body: RequestInit["body"]): RequestUrlParam["body"] {
 	if (body == null) return undefined;
 	if (typeof body === "string" || body instanceof ArrayBuffer) return body;
 	if (ArrayBuffer.isView(body))
