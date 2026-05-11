@@ -5,20 +5,21 @@ export interface SyncFileEntry {
 	remoteMtime: number;
 }
 
-const stateFilePath = (pluginDir: string) => `${pluginDir}/state.json`;
-
 export class StateStore {
 	lastSync = 0;
 	files: Record<string, SyncFileEntry> = {};
+	stateFilePath: string;
 
 	constructor(
 		private app: App,
-		private pluginDir: string,
-	) {}
+		readonly pluginDir: string,
+	) {
+		this.stateFilePath = `${pluginDir}/state.json`;
+	}
 
 	async load(): Promise<void> {
 		try {
-			const raw = await this.app.vault.adapter.read(stateFilePath(this.pluginDir));
+			const raw = await this.app.vault.adapter.read(this.stateFilePath);
 			const parsed = JSON.parse(raw);
 			this.lastSync = parsed.lastSync ?? 0;
 			this.files = parsed.files ?? {};
@@ -30,7 +31,7 @@ export class StateStore {
 
 	async save(): Promise<void> {
 		await this.app.vault.adapter.write(
-			stateFilePath(this.pluginDir),
+			this.stateFilePath,
 			JSON.stringify({ lastSync: this.lastSync, files: this.files }, null, 2),
 		);
 	}

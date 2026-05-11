@@ -5,11 +5,23 @@ import type { WebdavSyncSettings } from "../settings";
 import type { Client } from "../webdav/client";
 import type { StateStore, SyncFileEntry } from "./state";
 
-type UploadAction = { type: "upload"; local: TFile };
+type LocalFile = {
+	path: string;
+	extension: string;
+	mtime: number;
+	parentPath: string | null;
+};
+
+type UploadAction = { type: "upload"; local: LocalFile };
 type DownloadAction = { type: "download"; remotePath: string; remoteMtime: number };
-type ConflictAction = { type: "conflict"; local: TFile; remotePath: string; remoteMtime: number };
+type ConflictAction = {
+	type: "conflict";
+	local: LocalFile;
+	remotePath: string;
+	remoteMtime: number;
+};
 type DeleteRemoteAction = { type: "delete-remote"; remotePath: string };
-type DeleteLocalAction = { type: "delete-local"; local: TFile };
+type DeleteLocalAction = { type: "delete-local"; local: LocalFile };
 type SkipAction = { type: "skip" };
 
 type Action =
@@ -129,7 +141,7 @@ export class SyncEngine {
 	 * |  yes    |   no  |  yes   | delete-remote (local deleted it)          |
 	 */
 	private classify(
-		local: TFile | undefined,
+		local: LocalFile | undefined,
 		remote: FileStat | undefined,
 		tracked: SyncFileEntry | undefined,
 	): Action {
@@ -145,7 +157,7 @@ export class SyncEngine {
 		}
 
 		if (local && remote) {
-			const localChanged = local.stat.mtime > tracked.localMtime;
+			const localChanged = local.mtime > tracked.localMtime;
 			const remoteChanged = remoteMtime > tracked.remoteMtime;
 
 			if (!localChanged && !remoteChanged) return { type: "skip" };
@@ -202,7 +214,12 @@ export class SyncEngine {
 				} else if (action.type === "delete-local") {
 					if (syncDirection === "local-to-remote") continue;
 					if (deletionHandling === "never-delete-local") continue;
-					await this.app.vault.delete(action.local);
+					const tFile = this.app.vault.getFileByPath(action.local.path);
+					if (tFile) {
+						await this.app.vault.delete(tFile);
+					} else {
+						await this.app.vault.adapter.remove(action.local.path);
+					}
 					delete this.store.files[action.local.path];
 					await this.store.save();
 				}
@@ -224,7 +241,7 @@ export class SyncEngine {
 	 * Otherwise, the conflictResolution setting is used:
 	 *   "local-wins"   → upload
 	 *   "remote-wins"  → download
-	 *   "newest-wins"  → upload if local.stat.mtime >= remoteMtime, else download
+	 *   "newest-wins"  → upload if local.mtime >= remoteMtime, else download
 	 *   "ask"          → not yet implemented; falls back to newest-wins with a
 	 *                    console warning. Will be replaced by ConflictModal in Step 7.
 	 */
@@ -248,7 +265,7 @@ export class SyncEngine {
 		} else if (resolution === "remote-wins") {
 			await this.download(action.remotePath, action.remoteMtime);
 		} else if (resolution === "newest-wins") {
-			if (action.local.stat.mtime >= action.remoteMtime) {
+			if (action.local.mtime >= action.remoteMtime) {
 				await this.upload(action.local);
 			} else {
 				await this.download(action.remotePath, action.remoteMtime);
@@ -259,7 +276,7 @@ export class SyncEngine {
 			console.warn(
 				`[webdav-sync] Conflict on ${action.local.path} — ask mode not yet implemented, using newest-wins`,
 			);
-			if (action.local.stat.mtime >= action.remoteMtime) {
+			if (action.local.mtime >= action.remoteMtime) {
 				await this.upload(action.local);
 			} else {
 				await this.download(action.remotePath, action.remoteMtime);
@@ -267,16 +284,15 @@ export class SyncEngine {
 		}
 	}
 
-	private async upload(file: TFile): Promise<void> {
-		const dir = file.parent?.path;
-		if (dir) await this.client.ensureDirectory(dir);
-		const content = await this.app.vault.readBinary(file);
+	private async upload(file: LocalFile): Promise<void> {
+		if (file.parentPath) await this.client.ensureDirectory(file.parentPath);
+		const content = await this.app.vault.adapter.readBinary(file.path);
 		await this.client.uploadFile(file.path, content);
 		const entry = this.store.files[file.path] ?? { localMtime: 0, remoteMtime: 0 };
 		this.store.files[file.path] = {
 			...entry,
-			localMtime: file.stat.mtime,
-			remoteMtime: file.stat.mtime,
+			localMtime: file.mtime,
+			remoteMtime: file.mtime,
 		};
 		await this.store.save();
 	}
@@ -287,12 +303,10 @@ export class SyncEngine {
 		const file = this.app.vault.getFileByPath(localPath);
 		if (file) {
 			await this.app.vault.modifyBinary(file, content);
-		} else if (await this.app.vault.adapter.exists(localPath)) {
-			await this.app.vault.adapter.writeBinary(localPath, content);
 		} else {
 			const dir = localPath.split("/").slice(0, -1).join("/");
-			if (dir) await this.app.vault.createFolder(dir).catch(() => {});
-			await this.app.vault.createBinary(localPath, content);
+			if (dir) await this.app.vault.adapter.mkdir(dir).catch(() => {});
+			await this.app.vault.adapter.writeBinary(localPath, content);
 		}
 		const entry = this.store.files[localPath] ?? { localMtime: 0, remoteMtime: 0 };
 		this.store.files[localPath] = { ...entry, localMtime: remoteMtime, remoteMtime };
@@ -300,19 +314,18 @@ export class SyncEngine {
 	}
 
 	private async retrievePaths(): Promise<{
-		localByPath: Map<string, TFile>;
+		localByPath: Map<string, LocalFile>;
 		remoteByPath: Map<string, FileStat>;
 		setOfAllPaths: Set<string>;
 	}> {
-		const localFiles = this.getLocalFiles();
+		const localFiles = await this.getLocalFiles();
 		const remoteFiles = await this.client.listAllFiles("/");
 
 		const localByPath = new Map(localFiles.map((f) => [f.path, f]));
 		const remoteByPath = new Map(
-			remoteFiles.map((f) => {
-				const path = this.stripBasePath(f.filename);
-				return [path, f];
-			}),
+			remoteFiles
+				.map((f) => [this.stripBasePath(f.filename), f] as [string, FileStat])
+				.filter(([path]) => this.isInScope(path)),
 		);
 
 		const setOfAllPaths = new Set([...localByPath.keys(), ...remoteByPath.keys()]);
@@ -320,16 +333,60 @@ export class SyncEngine {
 		return { localByPath, remoteByPath, setOfAllPaths };
 	}
 
-	// Returns the subset of vault files that fall within the configured syncScope
-	private getLocalFiles(): TFile[] {
+	// Returns all in-scope local files as LocalFile records.
+	// vault.getFiles() omits .obsidian/ — for full-vault that directory is
+	// listed separately via the adapter so it can be included.
+	private async getLocalFiles(): Promise<LocalFile[]> {
+		const vaultFiles = this.app.vault
+			.getFiles()
+			.map((f) => ({
+				path: f.path,
+				extension: f.extension,
+				mtime: f.stat.mtime,
+				parentPath: f.parent?.path ?? null,
+			}))
+			.filter((f) => this.isInScope(f.path));
+
+		if (this.settings.syncScope !== "full-vault") return vaultFiles;
+
+		const obsidianFiles = await this.listAdapterDir(".obsidian");
+		return [...vaultFiles, ...obsidianFiles.filter((f) => this.isInScope(f.path))];
+	}
+
+	private async listAdapterDir(dirPath: string): Promise<LocalFile[]> {
+		const { files, folders } = await this.app.vault.adapter.list(dirPath);
+		const results: LocalFile[] = [];
+
+		for (const filePath of files) {
+			const stat = await this.app.vault.adapter.stat(filePath);
+			if (!stat) continue;
+			const parts = filePath.split("/");
+			const filename = parts.at(-1) ?? "";
+			results.push({
+				path: filePath,
+				extension: filename.split(".").pop() ?? "",
+				mtime: stat.mtime,
+				parentPath: parts.length > 1 ? parts.slice(0, -1).join("/") : null,
+			});
+		}
+
+		for (const folder of folders) {
+			results.push(...(await this.listAdapterDir(folder)));
+		}
+
+		return results;
+	}
+
+	// Returns true when a vault-relative path falls within the configured syncScope.
+	// The state file is always excluded to prevent sync loops.
+	private isInScope(vaultPath: string): boolean {
+		if (vaultPath === this.store.stateFilePath) return false;
 		const { syncScope, customSyncFolder } = this.settings;
-		return this.app.vault.getFiles().filter((file) => {
-			if (syncScope === "full-vault") return true;
-			if (syncScope === "exclude-obsidian") return !file.path.startsWith(".obsidian/");
-			if (syncScope === "markdown-only") return file.extension === "md";
-			if (syncScope === "custom-folder") return file.path.startsWith(`${customSyncFolder}/`);
-			return true;
-		});
+		if (syncScope === "full-vault") return true;
+		if (syncScope === "exclude-obsidian") return !vaultPath.startsWith(".obsidian/");
+		if (syncScope === "markdown-only") return vaultPath.endsWith(".md");
+		if (syncScope === "custom-folder") return vaultPath.startsWith(`${customSyncFolder}/`);
+		return true;
 	}
 
 	/**
