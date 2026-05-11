@@ -287,6 +287,8 @@ export class SyncEngine {
 		const file = this.app.vault.getFileByPath(localPath);
 		if (file) {
 			await this.app.vault.modifyBinary(file, content);
+		} else if (await this.app.vault.adapter.exists(localPath)) {
+			await this.app.vault.adapter.writeBinary(localPath, content);
 		} else {
 			const dir = localPath.split("/").slice(0, -1).join("/");
 			if (dir) await this.app.vault.createFolder(dir).catch(() => {});

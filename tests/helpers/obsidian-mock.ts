@@ -28,6 +28,12 @@ export class MockVaultAdapter {
 	async write(path: string, content: string): Promise<void> {
 		this.files.set(path, content);
 	}
+
+	async exists(_path: string): Promise<boolean> {
+		return false;
+	}
+
+	async writeBinary(_path: string, _content: ArrayBuffer): Promise<void> {}
 }
 
 export class MockVault {
