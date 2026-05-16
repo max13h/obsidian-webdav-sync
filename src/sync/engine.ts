@@ -214,14 +214,14 @@ export class SyncEngine {
 				} else if (action.type === "delete-local") {
 					if (syncDirection === "local-to-remote") continue;
 					if (deletionHandling === "never-delete-local") continue;
+					delete this.store.files[action.local.path]; // Prevent race condition with delete vent handler
+					await this.store.save();
 					const tFile = this.app.vault.getFileByPath(action.local.path);
 					if (tFile) {
 						await this.app.vault.delete(tFile);
 					} else {
 						await this.app.vault.adapter.remove(action.local.path);
 					}
-					delete this.store.files[action.local.path];
-					await this.store.save();
 				}
 			} catch (err) {
 				const path = "local" in action ? action.local.path : action.remotePath;

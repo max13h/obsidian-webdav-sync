@@ -207,6 +207,27 @@ describe("delete-local: tracked file, remote gone", () => {
 			.catch(() => false);
 		expect(exists).toBe(false);
 	});
+
+	it("no 404 error when vault events are also registered (regression)", async () => {
+		// Scenario: file synced, then deleted on remote, then user triggers sync.
+		// vault.delete() emits a "delete" event; the handler must not try to delete
+		// the already-gone server file and produce a spurious 404.
+		await app.vault.writeFile("notes.md", "content");
+		await engine.sync(); // uploads + tracks
+		await client.deleteFile("notes.md"); // simulate external remote deletion
+
+		const mirrorEngine = new SyncEngine(
+			app as never,
+			client,
+			{ ...settings, deletionHandling: "mirror" },
+			store,
+		);
+		mirrorEngine.registerVaultEvents(vi.fn());
+
+		const deleteFileSpy = vi.spyOn(client, "deleteFile");
+		await expect(mirrorEngine.sync()).resolves.not.toThrow();
+		expect(deleteFileSpy).not.toHaveBeenCalled(); // handler must not attempt the server delete
+	});
 });
 
 describe("delete-remote: tracked file, local gone", () => {
