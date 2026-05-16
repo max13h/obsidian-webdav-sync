@@ -289,11 +289,12 @@ export class SyncEngine {
 		if (file.parentPath) await this.client.ensureDirectory(file.parentPath);
 		const content = await this.app.vault.adapter.readBinary(file.path);
 		await this.client.uploadFile(file.path, content);
+		const remoteMtime = await this.client.statFile(file.path);
 		const entry = this.store.files[file.path] ?? { localMtime: 0, remoteMtime: 0 };
 		this.store.files[file.path] = {
 			...entry,
 			localMtime: file.mtime,
-			remoteMtime: file.mtime,
+			remoteMtime,
 		};
 		await this.store.save();
 	}

@@ -95,6 +95,12 @@ export class Client {
 		}
 	}
 
+	async statFile(remotePath: string): Promise<number> {
+		const client = await this.getClient();
+		const stat = (await client.stat(this.resolvePath(remotePath))) as FileStat;
+		return new Date(stat.lastmod).getTime();
+	}
+
 	async listAllFiles(remotePath: string): Promise<FileStat[]> {
 		const client = await this.getClient();
 		const contents = await client.getDirectoryContents(this.resolvePath(remotePath), {

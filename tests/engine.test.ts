@@ -128,6 +128,29 @@ describe("skip when nothing changed", () => {
 	});
 });
 
+describe("upload: remoteMtime reflects actual server mtime", () => {
+	it("stored remoteMtime matches what the server reports after upload", async () => {
+		await app.vault.writeFile("notes.md", "content");
+		await engine.sync();
+
+		const serverMtime = await client.statFile("notes.md");
+		expect(store.files["notes.md"]?.remoteMtime).toBe(serverMtime);
+	});
+
+	it("second sync does not re-download when server mtime differs from local mtime", async () => {
+		// Set local mtime to a value that doesn't match what the server will assign.
+		// Without the statFile fix this would leave remoteMtime = localMtime ≠ serverMtime,
+		// causing remoteChanged = true on the next sync → spurious download.
+		await app.vault.writeFile("notes.md", "content", 1_000_000);
+		await engine.sync();
+
+		const downloadSpy = vi.spyOn(client, "downloadFile");
+		await engine.sync();
+
+		expect(downloadSpy).not.toHaveBeenCalled();
+	});
+});
+
 describe("upload when local mtime > tracked", () => {
 	it("updated content verifiable on server", async () => {
 		const file = await app.vault.writeFile("notes.md", "v1");
