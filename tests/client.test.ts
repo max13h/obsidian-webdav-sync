@@ -122,4 +122,38 @@ describe("Client", () => {
 		expect(await client.testConnection()).toBe(false);
 		vi.restoreAllMocks();
 	});
+
+	describe("listAllFiles: BFS mode (listingDepth: manual_1)", () => {
+		it("returns files from nested directories", async () => {
+			const client = makeClient({ listingDepth: "manual_1" });
+			const prefix = uniquePrefix();
+
+			await client.ensureDirectory(`${prefix}/sub/deep`);
+			await client.uploadFile(`${prefix}/root.txt`, new ArrayBuffer(0));
+			await client.uploadFile(`${prefix}/sub/mid.txt`, new ArrayBuffer(0));
+			await client.uploadFile(`${prefix}/sub/deep/leaf.txt`, new ArrayBuffer(0));
+
+			const files = await client.listAllFiles(prefix);
+
+			expect(files.every((f) => f.type === "file")).toBe(true);
+			expect(files).toHaveLength(3);
+			expect(files.map((f) => f.basename).sort()).toEqual(["leaf.txt", "mid.txt", "root.txt"]);
+		});
+
+		it("produces the same file list as Depth:infinity", async () => {
+			const prefix = uniquePrefix();
+			const infinity = makeClient({ listingDepth: "infinity" });
+			const bfs = makeClient({ listingDepth: "manual_1" });
+
+			await infinity.ensureDirectory(`${prefix}/a/b`);
+			await infinity.uploadFile(`${prefix}/one.txt`, new ArrayBuffer(0));
+			await infinity.uploadFile(`${prefix}/a/two.txt`, new ArrayBuffer(0));
+			await infinity.uploadFile(`${prefix}/a/b/three.txt`, new ArrayBuffer(0));
+
+			const fromInfinity = (await infinity.listAllFiles(prefix)).map((f) => f.filename).sort();
+			const fromBfs = (await bfs.listAllFiles(prefix)).map((f) => f.filename).sort();
+
+			expect(fromBfs).toEqual(fromInfinity);
+		});
+	});
 });

@@ -8,6 +8,7 @@ export type SyncDirection = "two-way" | "local-to-remote" | "remote-to-local";
 export type ConflictResolution = "remote-wins" | "local-wins" | "newest-wins" | "ask";
 export type DeletionHandling = "mirror" | "never-delete-remote" | "never-delete-local";
 export type SyncScope = "full-vault" | "exclude-obsidian" | "custom-folder" | "markdown-only";
+export type ListingDepth = "infinity" | "manual_1";
 
 export interface WebdavSyncSettings {
 	// Connection
@@ -15,6 +16,7 @@ export interface WebdavSyncSettings {
 	remoteBasePath: string;
 	username: string;
 	passwordSecret: string;
+	listingDepth: ListingDepth;
 	// Sync behavior
 	syncDirection: SyncDirection;
 	conflictResolution: ConflictResolution;
@@ -37,6 +39,7 @@ export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	remoteBasePath: "",
 	username: "",
 	passwordSecret: "",
+	listingDepth: "infinity",
 	syncDirection: "two-way",
 	conflictResolution: "newest-wins",
 	deletionHandling: "never-delete-remote",
@@ -132,6 +135,23 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 							btn.setButtonText("Failed");
 							new Notice("WebDAV connection failed. Check your settings.");
 						}
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Directory listing")
+			.setDesc(
+				"Recursive (Depth:infinity) is faster but rejected by some servers (e.g. Nginx). " +
+					"Switch to BFS if you get errors on the first sync.",
+			)
+			.addDropdown((dd) =>
+				dd
+					.addOption("infinity", "Recursive (Depth:infinity)")
+					.addOption("manual_1", "BFS (Depth:1 per folder)")
+					.setValue(settings.listingDepth)
+					.onChange(async (value) => {
+						settings.listingDepth = value as ListingDepth;
+						await this.plugin.saveSettings();
 					}),
 			);
 

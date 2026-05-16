@@ -5,6 +5,7 @@ import type { WebdavSyncSettings } from "../settings";
 
 export class Client {
 	private client: ReturnType<typeof createClient> | null = null;
+	private _autoFallenBack = false;
 
 	constructor(
 		private app: App,
@@ -102,10 +103,46 @@ export class Client {
 	}
 
 	async listAllFiles(remotePath: string): Promise<FileStat[]> {
+		const resolved = this.resolvePath(remotePath);
+
+		if (this.settings.listingDepth === "manual_1" || this._autoFallenBack) {
+			return this.listAllFilesBfs(resolved);
+		}
+
 		const client = await this.getClient();
-		const contents = await client.getDirectoryContents(this.resolvePath(remotePath), {
-			deep: true,
-		});
-		return (contents as FileStat[]).filter((item) => item.type === "file");
+		try {
+			const contents = await client.getDirectoryContents(resolved, { deep: true });
+			return (contents as FileStat[]).filter((item) => item.type === "file");
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : "";
+			if (msg.includes(" 400 ") || msg.includes(" 403 ")) {
+				console.info("[webdav-sync] Depth:infinity rejected by server, falling back to BFS");
+				this._autoFallenBack = true;
+				return this.listAllFilesBfs(resolved);
+			}
+			throw err;
+		}
+	}
+
+	private async listAllFilesBfs(startPath: string): Promise<FileStat[]> {
+		const client = await this.getClient();
+		const result: FileStat[] = [];
+		const queue: string[] = [startPath];
+		const norm = (p: string) => p.replace(/\/$/, "");
+
+		while (queue.length > 0) {
+			const dir = queue.shift()!;
+			const items = (await client.getDirectoryContents(dir, { deep: false })) as FileStat[];
+			for (const item of items) {
+				if (norm(item.filename) === norm(dir)) continue; // skip the dir entry itself
+				if (item.type === "directory") {
+					queue.push(item.filename);
+				} else {
+					result.push(item);
+				}
+			}
+		}
+
+		return result;
 	}
 }
