@@ -18,6 +18,18 @@ export class Client {
 		return base ? `${base}${path}` : path;
 	}
 
+	private parseCustomHeaders(raw: string): Record<string, string> {
+		const headers: Record<string, string> = {};
+		for (const line of raw.split("\n")) {
+			const colon = line.indexOf(":");
+			if (colon === -1) continue;
+			const key = line.slice(0, colon).trim();
+			const value = line.slice(colon + 1).trim();
+			if (key) headers[key] = value;
+		}
+		return headers;
+	}
+
 	private async getClient(force: boolean = false) {
 		if (!this.client || force) {
 			const password = this.app.secretStorage.getSecret(this.settings.passwordSecret) ?? "";
@@ -25,6 +37,7 @@ export class Client {
 				username: this.settings.username,
 				password,
 				authType: this.settings.authType === "digest" ? AuthType.Digest : AuthType.Password,
+				headers: this.parseCustomHeaders(this.settings.customHeaders),
 			});
 		}
 		return this.client;

@@ -18,6 +18,7 @@ export interface WebdavSyncSettings {
 	username: string;
 	passwordSecret: string;
 	authType: WebdavAuthType;
+	customHeaders: string;
 	listingDepth: ListingDepth;
 	// Sync behavior
 	syncDirection: SyncDirection;
@@ -42,6 +43,7 @@ export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	username: "",
 	passwordSecret: "",
 	authType: "basic",
+	customHeaders: "",
 	listingDepth: "infinity",
 	syncDirection: "two-way",
 	conflictResolution: "newest-wins",
@@ -129,6 +131,21 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 					.setValue(settings.authType)
 					.onChange(async (value) => {
 						settings.authType = value as WebdavAuthType;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Custom headers")
+			.setDesc(
+				"Extra HTTP headers sent with every request, one per line (e.g. X-API-Token: secret).",
+			)
+			.addTextArea((ta) =>
+				ta
+					.setPlaceholder("X-API-Token: secret\nX-Custom-Header: value")
+					.setValue(settings.customHeaders)
+					.onChange(async (value) => {
+						settings.customHeaders = value;
 						await this.plugin.saveSettings();
 					}),
 			);

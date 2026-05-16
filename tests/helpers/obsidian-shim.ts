@@ -39,6 +39,9 @@ export class Setting {
 	addText(_cb: unknown) {
 		return this;
 	}
+	addTextArea(_cb: unknown) {
+		return this;
+	}
 	addDropdown(_cb: unknown) {
 		return this;
 	}
