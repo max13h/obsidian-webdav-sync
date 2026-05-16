@@ -116,6 +116,7 @@ export class SyncEngine {
 	}
 
 	async sync(): Promise<void> {
+		await this.client.ensureRemoteBasePath();
 		const { localByPath, remoteByPath, setOfAllPaths } = await this.retrievePaths();
 		const actions: Action[] = [];
 

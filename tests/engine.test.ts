@@ -71,6 +71,31 @@ async function listServerPaths(): Promise<string[]> {
 	return files.map((f) => f.filename.replace(base, ""));
 }
 
+// ─── remoteBasePath auto-creation ────────────────────────────────────────────
+
+describe("remoteBasePath auto-creation", () => {
+	it("sync() creates remoteBasePath when it does not exist on the server", async () => {
+		// Use a fresh prefix that was never created — no beforeEach ensureDirectory call.
+		const freshPrefix = `/auto-${crypto.randomUUID()}`;
+		const freshSettings = { ...settings, remoteBasePath: freshPrefix };
+		const freshApp = new NodeFsApp(vaultDir, WEBDAV_PASSWORD);
+		const freshClient = new Client(freshApp as never, freshSettings);
+		const freshStore = new StateStore(freshApp as never, ".obsidian/plugins/webdav-sync");
+		const freshEngine = new SyncEngine(freshApp as never, freshClient, freshSettings, freshStore);
+
+		await freshApp.vault.writeFile("notes.md", "hello");
+
+		await expect(freshEngine.sync()).resolves.not.toThrow();
+		expect(decode(await freshClient.downloadFile("notes.md"))).toBe("hello");
+	});
+
+	it("sync() succeeds when remoteBasePath already exists", async () => {
+		// beforeEach already created settings.remoteBasePath — must not error.
+		await app.vault.writeFile("notes.md", "hello");
+		await expect(engine.sync()).resolves.not.toThrow();
+	});
+});
+
 // ─── sync() scenarios ─────────────────────────────────────────────────────────
 
 describe("upload new local file", () => {

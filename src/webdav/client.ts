@@ -68,11 +68,29 @@ export class Client {
 		const parts = resolved.replace(/^\//, "").split("/");
 		let current = "";
 		for (const part of parts) {
+			if (!part) continue;
 			current += `/${part}`;
 			try {
 				await client.createDirectory(current);
 			} catch {
 				// Directory likely already exists
+			}
+		}
+	}
+
+	async ensureRemoteBasePath(): Promise<void> {
+		const base = this.settings.remoteBasePath.replace(/\/$/, "");
+		if (!base) return;
+		const client = await this.getClient();
+		const parts = base.replace(/^\//, "").split("/");
+		let current = "";
+		for (const part of parts) {
+			if (!part) continue;
+			current += `/${part}`;
+			try {
+				await client.createDirectory(current);
+			} catch {
+				// Already exists
 			}
 		}
 	}
