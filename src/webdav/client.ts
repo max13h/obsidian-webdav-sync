@@ -1,6 +1,7 @@
 import type { App } from "obsidian";
 import type { FileStat } from "webdav";
 import { AuthType, createClient } from "webdav";
+import { type Logger, SILENT_LOGGER } from "../logger";
 import type { WebdavSyncSettings } from "../settings";
 
 export class Client {
@@ -10,6 +11,7 @@ export class Client {
 	constructor(
 		private app: App,
 		private settings: WebdavSyncSettings,
+		private logger: Logger = SILENT_LOGGER,
 	) {}
 
 	private resolvePath(remotePath: string): string {
@@ -48,31 +50,36 @@ export class Client {
 			const client = await this.getClient(true);
 			const basePath = this.settings.remoteBasePath || "/";
 			await client.getDirectoryContents(basePath);
+			this.logger.debug(`Connection test passed: ${this.settings.serverUrl}`);
 			return true;
 		} catch (error) {
-			console.error("WebDAV Connection Error:", error);
+			this.logger.error("Connection test failed:", error);
 			this.client = null;
 			return false;
 		}
 	}
 
 	async uploadFile(remotePath: string, content: ArrayBuffer): Promise<void> {
+		this.logger.debug(`upload "${remotePath}" (${content.byteLength} bytes)`);
 		const client = await this.getClient();
 		await client.putFileContents(this.resolvePath(remotePath), content, { overwrite: true });
 	}
 
 	async downloadFile(remotePath: string): Promise<ArrayBuffer> {
+		this.logger.debug(`download "${remotePath}"`);
 		const client = await this.getClient();
 		const data = await client.getFileContents(this.resolvePath(remotePath));
 		return data as ArrayBuffer;
 	}
 
 	async deleteFile(remotePath: string): Promise<void> {
+		this.logger.debug(`delete "${remotePath}"`);
 		const client = await this.getClient();
 		await client.deleteFile(this.resolvePath(remotePath));
 	}
 
 	async moveFile(srcPath: string, destPath: string): Promise<void> {
+		this.logger.debug(`move "${srcPath}" → "${destPath}"`);
 		const client = await this.getClient();
 		await client.moveFile(this.resolvePath(srcPath), this.resolvePath(destPath));
 	}
@@ -120,19 +127,25 @@ export class Client {
 		const resolved = this.resolvePath(remotePath);
 
 		if (this.settings.listingDepth === "manual_1" || this._autoFallenBack) {
-			return this.listAllFilesBfs(resolved);
+			const files = await this.listAllFilesBfs(resolved);
+			this.logger.debug(`list "${remotePath}" → ${files.length} files (BFS)`);
+			return files;
 		}
 
 		const client = await this.getClient();
 		try {
 			const contents = await client.getDirectoryContents(resolved, { deep: true });
-			return (contents as FileStat[]).filter((item) => item.type === "file");
+			const files = (contents as FileStat[]).filter((item) => item.type === "file");
+			this.logger.debug(`list "${remotePath}" → ${files.length} files (Depth:infinity)`);
+			return files;
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : "";
 			if (msg.includes(" 400 ") || msg.includes(" 403 ")) {
-				console.info("[webdav-sync] Depth:infinity rejected by server, falling back to BFS");
+				this.logger.info("Depth:infinity rejected by server, falling back to BFS");
 				this._autoFallenBack = true;
-				return this.listAllFilesBfs(resolved);
+				const files = await this.listAllFilesBfs(resolved);
+				this.logger.debug(`list "${remotePath}" → ${files.length} files (BFS fallback)`);
+				return files;
 			}
 			throw err;
 		}

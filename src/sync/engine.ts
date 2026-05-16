@@ -1,6 +1,7 @@
 import type { App, EventRef } from "obsidian";
 import { Notice, TFile, TFolder } from "obsidian";
 import type { FileStat } from "webdav";
+import { type Logger, SILENT_LOGGER } from "../logger";
 import type { WebdavSyncSettings } from "../settings";
 import { type ConflictChoice, ConflictModal } from "../ui/conflictModal";
 import type { Client } from "../webdav/client";
@@ -50,6 +51,7 @@ export class SyncEngine {
 		private settings: WebdavSyncSettings,
 		private store: StateStore,
 		conflictResolver?: ConflictResolver,
+		private logger: Logger = SILENT_LOGGER,
 	) {
 		this.conflictResolver = conflictResolver ?? SyncEngine.makeModalResolver(app);
 	}
@@ -83,7 +85,7 @@ export class SyncEngine {
 						delete this.store.files[oldPath];
 						await this.store.save();
 					} catch (err) {
-						console.error("[webdav-sync] rename failed", err);
+						this.logger.error("rename failed", err);
 						if (this.settings.notificationsEnabled)
 							new Notice(`WebDAV sync: rename failed for "${oldPath}"`);
 					}
@@ -101,7 +103,7 @@ export class SyncEngine {
 						}
 						await this.store.save();
 					} catch (err) {
-						console.error("[webdav-sync] folder rename failed", err);
+						this.logger.error("folder rename failed", err);
 						if (this.settings.notificationsEnabled)
 							new Notice(`WebDAV sync: folder rename failed for "${oldPath}"`);
 					}
@@ -121,7 +123,7 @@ export class SyncEngine {
 						delete this.store.files[abstractFile.path];
 						await this.store.save();
 					} catch (err) {
-						console.error("[webdav-sync] delete failed", err);
+						this.logger.error("delete failed", err);
 						if (this.settings.notificationsEnabled)
 							new Notice(`WebDAV sync: delete failed for "${abstractFile.path}"`);
 					}
@@ -132,7 +134,7 @@ export class SyncEngine {
 						try {
 							await this.client.deleteFile(path);
 						} catch (err) {
-							console.error("[webdav-sync] delete failed for", path, err);
+							this.logger.error("delete failed for", path, err);
 							if (this.settings.notificationsEnabled)
 								new Notice(`WebDAV sync: delete failed for "${path}"`);
 						}
@@ -145,19 +147,41 @@ export class SyncEngine {
 	}
 
 	async sync(): Promise<void> {
+		const t0 = Date.now();
+		this.logger.debug("Sync started");
+
 		await this.client.ensureRemoteBasePath();
 		const { localByPath, remoteByPath, setOfAllPaths } = await this.retrievePaths();
-		const actions: Action[] = [];
 
+		this.logger.debug(
+			`Found ${setOfAllPaths.size} paths: ${localByPath.size} local, ${remoteByPath.size} remote`,
+		);
+
+		const actions: Action[] = [];
 		for (const path of setOfAllPaths) {
 			const local = localByPath.get(path);
 			const remote = remoteByPath.get(path);
 			actions.push(this.classify(local, remote, this.store.files[path]));
 		}
 
+		const counts = {
+			upload: 0,
+			download: 0,
+			conflict: 0,
+			"delete-remote": 0,
+			"delete-local": 0,
+			skip: 0,
+		};
+		for (const a of actions) counts[a.type]++;
+		this.logger.debug(
+			`Actions: ${counts.upload} uploads, ${counts.download} downloads, ${counts.conflict} conflicts, ${counts["delete-remote"] + counts["delete-local"]} deletions, ${counts.skip} skips`,
+		);
+
 		await this.execute(actions);
 		this.store.lastSync = Date.now();
 		await this.store.save();
+
+		this.logger.debug(`Sync completed in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 	}
 
 	/**
@@ -228,23 +252,28 @@ export class SyncEngine {
 			try {
 				if (action.type === "upload") {
 					if (syncDirection === "remote-to-local") continue;
+					this.logger.debug(`upload "${action.local.path}"`);
 					await this.upload(action.local);
 				} else if (action.type === "download") {
 					if (syncDirection === "local-to-remote") continue;
+					this.logger.debug(`download "${this.stripBasePath(action.remotePath)}"`);
 					await this.download(action.remotePath, action.remoteMtime);
 				} else if (action.type === "conflict") {
+					this.logger.debug(`conflict "${action.local.path}" — resolving`);
 					await this.resolveConflict(action, conflictResolution, syncDirection);
 				} else if (action.type === "delete-remote") {
 					if (syncDirection === "remote-to-local") continue;
 					if (deletionHandling === "never-delete-remote") continue;
 					const localPath = this.stripBasePath(action.remotePath);
+					this.logger.debug(`delete-remote "${localPath}"`);
 					await this.client.deleteFile(localPath);
 					delete this.store.files[localPath];
 					await this.store.save();
 				} else if (action.type === "delete-local") {
 					if (syncDirection === "local-to-remote") continue;
 					if (deletionHandling === "never-delete-local") continue;
-					delete this.store.files[action.local.path]; // Prevent race condition with delete vent handler
+					this.logger.debug(`delete-local "${action.local.path}"`);
+					delete this.store.files[action.local.path]; // Prevent race condition with delete event handler
 					await this.store.save();
 					const tFile = this.app.vault.getFileByPath(action.local.path);
 					if (tFile) {
@@ -255,7 +284,7 @@ export class SyncEngine {
 				}
 			} catch (err) {
 				const path = "local" in action ? action.local.path : action.remotePath;
-				console.error(`[webdav-sync] Action "${action.type}" failed for "${path}"`, err);
+				this.logger.error(`Action "${action.type}" failed for "${path}"`, err);
 				new Notice(`WebDAV sync: ${action.type} failed for "${path}"`);
 			}
 		}
@@ -291,11 +320,17 @@ export class SyncEngine {
 
 		// two-way: apply conflict resolution strategy
 		if (resolution === "local-wins") {
+			this.logger.debug(`conflict "${action.local.path}": local-wins → upload`);
 			await this.upload(action.local);
 		} else if (resolution === "remote-wins") {
+			this.logger.debug(`conflict "${action.local.path}": remote-wins → download`);
 			await this.download(action.remotePath, action.remoteMtime);
 		} else if (resolution === "newest-wins") {
-			if (action.local.mtime >= action.remoteMtime) {
+			const pickLocal = action.local.mtime >= action.remoteMtime;
+			this.logger.debug(
+				`conflict "${action.local.path}": newest-wins (local=${new Date(action.local.mtime).toISOString()}, remote=${new Date(action.remoteMtime).toISOString()}) → ${pickLocal ? "upload" : "download"}`,
+			);
+			if (pickLocal) {
 				await this.upload(action.local);
 			} else {
 				await this.download(action.remotePath, action.remoteMtime);
@@ -311,6 +346,7 @@ export class SyncEngine {
 				localContent,
 				remoteContent,
 			);
+			this.logger.debug(`conflict "${action.local.path}": ask → user chose ${choice}`);
 			if (choice === "keep-local") {
 				await this.upload(action.local);
 			} else {

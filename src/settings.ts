@@ -35,6 +35,8 @@ export interface WebdavSyncSettings {
 	statusBarEnabled: boolean;
 	syncIndicatorEnabled: boolean;
 	notificationsEnabled: boolean;
+	// Developer
+	debugMode: boolean;
 }
 
 export const DEFAULT_SETTINGS: WebdavSyncSettings = {
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	statusBarEnabled: true,
 	syncIndicatorEnabled: true,
 	notificationsEnabled: true,
+	debugMode: false,
 };
 
 export class WebdavSyncSettingTab extends PluginSettingTab {
@@ -352,6 +355,21 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 			.addToggle((toggle) =>
 				toggle.setValue(settings.notificationsEnabled).onChange(async (value) => {
 					settings.notificationsEnabled = value;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		// --- Developer ---
+		new Setting(containerEl).setName("Developer").setHeading();
+
+		new Setting(containerEl)
+			.setName("Debug mode")
+			.setDesc(
+				"Log detailed sync activity to the developer console (Ctrl+Shift+I / Cmd+Option+I). Enable the Verbose level to see debug messages.",
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(settings.debugMode).onChange(async (value) => {
+					settings.debugMode = value;
 					await this.plugin.saveSettings();
 				}),
 			);

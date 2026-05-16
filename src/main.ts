@@ -1,5 +1,6 @@
 import { Notice, Plugin } from "obsidian";
 import { assertDefined } from "./errors";
+import { Logger } from "./logger";
 import { DEFAULT_SETTINGS, type WebdavSyncSettings, WebdavSyncSettingTab } from "./settings";
 import { SyncEngine } from "./sync/engine";
 import { Scheduler } from "./sync/scheduler";
@@ -11,6 +12,7 @@ import { patchWebdavFetch } from "./webdav/patcher";
 
 export default class WebdavSync extends Plugin {
 	settings: WebdavSyncSettings | undefined;
+	logger: Logger | undefined;
 	store: StateStore | undefined;
 	client: Client | undefined;
 	engine: SyncEngine | undefined;
@@ -24,12 +26,21 @@ export default class WebdavSync extends Plugin {
 
 		assertDefined(this.settings, "Failed to load WebDAV Sync settings.");
 
+		this.logger = new Logger(this.settings);
+
 		this.store = new StateStore(this.app, this.manifest.dir ?? ".obsidian/webdav-sync/");
 		await this.store.load();
 
-		this.client = new Client(this.app, this.settings);
-		this.engine = new SyncEngine(this.app, this.client, this.settings, this.store);
-		this.scheduler = new Scheduler(this.app, () => this.runSync(), this.settings);
+		this.client = new Client(this.app, this.settings, this.logger);
+		this.engine = new SyncEngine(
+			this.app,
+			this.client,
+			this.settings,
+			this.store,
+			undefined,
+			this.logger,
+		);
+		this.scheduler = new Scheduler(this.app, () => this.runSync(), this.settings, this.logger);
 
 		this.registerCommandsAndSettings();
 
@@ -104,7 +115,7 @@ export default class WebdavSync extends Plugin {
 			if (this.settings.notificationsEnabled) {
 				new Notice(`WebDAV sync failed: ${message}`);
 			}
-			console.error("[webdav-sync]", err);
+			this.logger?.error(err);
 		} finally {
 			this.scheduler?.setSyncing(false);
 		}
