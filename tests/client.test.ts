@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { WebdavSyncSettings } from "../src/settings.js";
 import { DEFAULT_SETTINGS } from "../src/settings.js";
 import { Client } from "../src/webdav/client.js";
-import { MockApp } from "./helpers/obsidian-mock.js";
+import { NodeFsApp } from "./helpers/node-fs-app.js";
 import { WEBDAV_PASSWORD, WEBDAV_URL, WEBDAV_USERNAME } from "./helpers/webdav-server.js";
 
 function makeSettings(overrides: Partial<WebdavSyncSettings> = {}): WebdavSyncSettings {
@@ -17,7 +17,7 @@ function makeSettings(overrides: Partial<WebdavSyncSettings> = {}): WebdavSyncSe
 }
 
 function makeClient(overrides: Partial<WebdavSyncSettings> = {}): Client {
-	const app = new MockApp(WEBDAV_PASSWORD);
+	const app = new NodeFsApp("/tmp/webdav-client-test", WEBDAV_PASSWORD);
 	return new Client(app as never, makeSettings(overrides));
 }
 
@@ -117,7 +117,7 @@ describe("Client", () => {
 
 	it("testConnection returns false when credentials are wrong", async () => {
 		vi.spyOn(console, "error").mockImplementation(() => {});
-		const app = new MockApp("wrong-password");
+		const app = new NodeFsApp("/tmp/webdav-client-test", "wrong-password");
 		const client = new Client(app as never, makeSettings());
 		expect(await client.testConnection()).toBe(false);
 		vi.restoreAllMocks();
