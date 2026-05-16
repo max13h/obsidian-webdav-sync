@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import type { FileStat } from "webdav";
-import { createClient } from "webdav";
+import { AuthType, createClient } from "webdav";
 import type { WebdavSyncSettings } from "../settings";
 
 export class Client {
@@ -24,6 +24,7 @@ export class Client {
 			this.client = createClient(this.settings.serverUrl, {
 				username: this.settings.username,
 				password,
+				authType: this.settings.authType === "digest" ? AuthType.Digest : AuthType.Password,
 			});
 		}
 		return this.client;

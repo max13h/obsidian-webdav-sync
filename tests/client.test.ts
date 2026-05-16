@@ -123,6 +123,13 @@ describe("Client", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("testConnection returns false when authType is digest against a basic-auth server", async () => {
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const client = makeClient({ authType: "digest" });
+		expect(await client.testConnection()).toBe(false);
+		vi.restoreAllMocks();
+	});
+
 	describe("listAllFiles: BFS mode (listingDepth: manual_1)", () => {
 		it("returns files from nested directories", async () => {
 			const client = makeClient({ listingDepth: "manual_1" });

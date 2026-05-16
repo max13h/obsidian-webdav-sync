@@ -9,6 +9,7 @@ export type ConflictResolution = "remote-wins" | "local-wins" | "newest-wins" | 
 export type DeletionHandling = "mirror" | "never-delete-remote" | "never-delete-local";
 export type SyncScope = "full-vault" | "exclude-obsidian" | "custom-folder" | "markdown-only";
 export type ListingDepth = "infinity" | "manual_1";
+export type WebdavAuthType = "basic" | "digest";
 
 export interface WebdavSyncSettings {
 	// Connection
@@ -16,6 +17,7 @@ export interface WebdavSyncSettings {
 	remoteBasePath: string;
 	username: string;
 	passwordSecret: string;
+	authType: WebdavAuthType;
 	listingDepth: ListingDepth;
 	// Sync behavior
 	syncDirection: SyncDirection;
@@ -39,6 +41,7 @@ export const DEFAULT_SETTINGS: WebdavSyncSettings = {
 	remoteBasePath: "",
 	username: "",
 	passwordSecret: "",
+	authType: "basic",
 	listingDepth: "infinity",
 	syncDirection: "two-way",
 	conflictResolution: "newest-wins",
@@ -115,6 +118,20 @@ export class WebdavSyncSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}),
 		);
+
+		new Setting(containerEl)
+			.setName("Authentication type")
+			.setDesc("Basic is standard. Use Digest only if your server requires it.")
+			.addDropdown((dd) =>
+				dd
+					.addOption("basic", "Basic")
+					.addOption("digest", "Digest")
+					.setValue(settings.authType)
+					.onChange(async (value) => {
+						settings.authType = value as WebdavAuthType;
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl)
 			.setName("Test connection")
