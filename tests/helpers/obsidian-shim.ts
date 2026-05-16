@@ -2,6 +2,12 @@
 // Every named export used by source files at module-evaluation time must be present,
 // otherwise ESM linking throws a SyntaxError before tests even run.
 
+export class Modal {
+	contentEl = {} as HTMLElement;
+	open() {}
+	close() {}
+}
+
 export class TFile {
 	path = "";
 	extension = "";

@@ -5,8 +5,9 @@ import { TFile, TFolder } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebdavSyncSettings } from "../src/settings.js";
 import { DEFAULT_SETTINGS } from "../src/settings.js";
-import { SyncEngine } from "../src/sync/engine.js";
+import { type ConflictResolver, SyncEngine } from "../src/sync/engine.js";
 import { StateStore } from "../src/sync/state.js";
+import type { ConflictChoice } from "../src/ui/conflictModal.js";
 import { Client } from "../src/webdav/client.js";
 import { NodeFsApp } from "./helpers/node-fs-app.js";
 import { WEBDAV_PASSWORD, WEBDAV_URL, WEBDAV_USERNAME } from "./helpers/webdav-server.js";
@@ -235,6 +236,66 @@ describe("conflict: newest-wins", () => {
 		).sync();
 
 		expect(await readFile(join(vaultDir, "conflict.md"), "utf-8")).toBe("remote content");
+	});
+});
+
+describe("conflict: ask", () => {
+	it("keep-local: local content ends up on server", async () => {
+		await client.uploadFile("conflict.md", encode("remote content"));
+		await app.vault.writeFile("conflict.md", "local content");
+
+		const resolver: ConflictResolver = vi.fn().mockResolvedValue("keep-local" as ConflictChoice);
+		await new SyncEngine(
+			app as never,
+			client,
+			{ ...settings, conflictResolution: "ask" },
+			store,
+			resolver,
+		).sync();
+
+		expect(resolver).toHaveBeenCalledOnce();
+		expect(decode(await client.downloadFile("conflict.md"))).toBe("local content");
+	});
+
+	it("keep-remote: remote content ends up on disk", async () => {
+		await client.uploadFile("conflict.md", encode("remote content"));
+		await app.vault.writeFile("conflict.md", "local content");
+
+		const resolver: ConflictResolver = vi.fn().mockResolvedValue("keep-remote" as ConflictChoice);
+		await new SyncEngine(
+			app as never,
+			client,
+			{ ...settings, conflictResolution: "ask" },
+			store,
+			resolver,
+		).sync();
+
+		expect(resolver).toHaveBeenCalledOnce();
+		expect(await readFile(join(vaultDir, "conflict.md"), "utf-8")).toBe("remote content");
+	});
+
+	it("resolver receives correct path and both file contents", async () => {
+		await client.uploadFile("conflict.md", encode("remote content"));
+		await app.vault.writeFile("conflict.md", "local content");
+
+		let capturedArgs: Parameters<ConflictResolver> | null = null;
+		const resolver: ConflictResolver = vi.fn(async (...args): Promise<ConflictChoice> => {
+			capturedArgs = args as Parameters<ConflictResolver>;
+			return "keep-local";
+		});
+
+		await new SyncEngine(
+			app as never,
+			client,
+			{ ...settings, conflictResolution: "ask" },
+			store,
+			resolver,
+		).sync();
+
+		expect(capturedArgs).not.toBeNull();
+		expect(capturedArgs?.[0]).toBe("conflict.md");
+		expect(decode(capturedArgs?.[3])).toBe("local content");
+		expect(decode(capturedArgs?.[4])).toBe("remote content");
 	});
 });
 

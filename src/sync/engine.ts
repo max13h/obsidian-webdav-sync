@@ -2,8 +2,17 @@ import type { App, EventRef } from "obsidian";
 import { Notice, TFile, TFolder } from "obsidian";
 import type { FileStat } from "webdav";
 import type { WebdavSyncSettings } from "../settings";
+import { type ConflictChoice, ConflictModal } from "../ui/conflictModal";
 import type { Client } from "../webdav/client";
 import type { StateStore, SyncFileEntry } from "./state";
+
+export type ConflictResolver = (
+	path: string,
+	localMtime: number,
+	remoteMtime: number,
+	localContent: ArrayBuffer,
+	remoteContent: ArrayBuffer,
+) => Promise<ConflictChoice>;
 
 type LocalFile = {
 	path: string;
@@ -33,12 +42,32 @@ type Action =
 	| SkipAction;
 
 export class SyncEngine {
+	private conflictResolver: ConflictResolver;
+
 	constructor(
 		private app: App,
 		private client: Client,
 		private settings: WebdavSyncSettings,
 		private store: StateStore,
-	) {}
+		conflictResolver?: ConflictResolver,
+	) {
+		this.conflictResolver = conflictResolver ?? SyncEngine.makeModalResolver(app);
+	}
+
+	private static makeModalResolver(app: App): ConflictResolver {
+		return (path, localMtime, remoteMtime, localContent, remoteContent) =>
+			new Promise((resolve) => {
+				new ConflictModal(
+					app,
+					path,
+					localMtime,
+					remoteMtime,
+					localContent,
+					remoteContent,
+					resolve,
+				).open();
+			});
+	}
 
 	registerVaultEvents(registerEvent: (event: EventRef) => void): void {
 		registerEvent(
@@ -272,12 +301,17 @@ export class SyncEngine {
 				await this.download(action.remotePath, action.remoteMtime);
 			}
 		} else {
-			// "ask" — not yet implemented, fall back to newest-wins
-			// TODO: integrate ConflictModal when available
-			console.warn(
-				`[webdav-sync] Conflict on ${action.local.path} — ask mode not yet implemented, using newest-wins`,
+			// "ask" — delegate to injected resolver (default: ConflictModal)
+			const localContent = await this.app.vault.adapter.readBinary(action.local.path);
+			const remoteContent = await this.client.downloadFile(action.local.path);
+			const choice = await this.conflictResolver(
+				action.local.path,
+				action.local.mtime,
+				action.remoteMtime,
+				localContent,
+				remoteContent,
 			);
-			if (action.local.mtime >= action.remoteMtime) {
+			if (choice === "keep-local") {
 				await this.upload(action.local);
 			} else {
 				await this.download(action.remotePath, action.remoteMtime);
