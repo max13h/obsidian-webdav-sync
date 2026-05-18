@@ -1,3 +1,7 @@
+Plugin started few days before the release of https://github.com/hesprs/obsidian-webdav-sync
+Choose this option instead
+___
+
 # Webdav-sync Obsidian plugin
 
 This plugin allows you to sync your Obsidian vault with a WebDAV server. It provides a simple interface to connect to your WebDAV server and sync your files.
